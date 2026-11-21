@@ -9,7 +9,7 @@ Budget-aware model router for Hermes Agent. Picks the cheapest model that fits e
 
 **Social preview:** Settings → General → Social preview → upload `docs/img/social-preview.png`
 
-**Release:** tag `v0.3.0`, title "v0.3.0: first public release", body = `.github/RELEASE_NOTES_v0.3.0.md`
+**Release:** tag `v0.3.3`, title "v0.3.3: first public release", body = `.github/RELEASE_NOTES_v0.3.3.md`
 
 **Settings:** enable Issues and Discussions. Disable Wiki and Projects. Labels: `setup-report`, `bug`, `preset`, `good first issue`.
 
