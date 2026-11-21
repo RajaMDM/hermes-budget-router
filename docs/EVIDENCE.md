@@ -25,6 +25,8 @@ Three levels of proof:
 | 13 | Hermes' cost estimate matches published prices | README, post | [Still](demo/03-sessions-proof.png); `h --sessions` shows Hermes' `estimated_cost_usd` next to an independent recomputation (tokens × [published prices](https://platform.claude.com/docs/en/about-claude/pricing)). Three real Haiku sessions on 21 Nov 2026: 4 input + ~130 output + 21,693 cache-write tokens → $0.0028 both ways | ✓ (recomputation, not a bill) |
 | 14 | Starting a fresh Hermes session costs ~$0.003 on Haiku vs ~$0.11 on Opus, before any real work | README, post | The same rows: each new session writes ~21.7K tokens of setup (system prompt, tools, skills, SOUL.md) to the prompt cache. 21,693 × $0.125/M (Haiku 5-min cache write) ≈ $0.0027; × $5/M (Opus) ≈ $0.108 | ✓ Opus row 12:26: 20,993 cache-write tokens × $5/M = $0.105 |
 | 15 | A session started within 5 minutes of the previous one cost 54% less ($0.0013 vs $0.0028) | README, guide, post | CSV row 15:04: 12,352 cache-read + 9,282 cache-write tokens, against 21,693 cache-write tokens cold | ✓ |
+| 16 | Same agent: simple question → Haiku **$0.0027**; complex question → Opus **$0.1389** (~51×) | README, video, post | `docs/demo/video.cast` (the full recording) and its on-screen `h --sessions 2`; recomputation matches: Opus 21,660 cache-write × $5/M + 1,531 output × $20/M = $0.1389 | ✓ |
+| 17 | Opus itself said Sonnet would have been enough ("next time: h -s") | Video, post | Footer line in `docs/demo/video.cast`, shown in the video at the moment it's narrated | ✓ |
 
 ## How to capture the pending items
 

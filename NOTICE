@@ -1,0 +1,17 @@
+hermes-budget-router
+Copyright (c) 2026 Raja Shahnawaz Soni
+
+The source code and documentation in this repository are licensed under the MIT License (see LICENSE),
+with one exception:
+
+  docs/demo/hermes-budget-router-demo.mp4
+  docs/demo/hermes-budget-router-demo-cc.mp4
+
+These narrated videos are Copyright (c) 2026 Raja Shahnawaz Soni, trykarkedekho.com. All rights reserved.
+You may link to them and embed them unmodified with attribution. Any other use needs permission.
+
+Third-party components used to produce the videos (not distributed in this repository):
+  - Hermes Agent, Nous Research, MIT License (the software shown)
+  - Kokoro-82M text-to-speech model, Apache License 2.0 (narration voice "bf_isabella")
+  - HyperFrames CLI, HeyGen (used to run Kokoro)
+  - asciinema / agg (terminal recording)

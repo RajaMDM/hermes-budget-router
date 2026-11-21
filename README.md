@@ -9,7 +9,24 @@
 
 <sub>A real, unedited run on Hermes v0.23.3 (21 Nov 2026), recorded with asciinema. [MP4](docs/demo/demo.mp4) · [how to record your own](docs/demo/README.md) · [every number, sourced](docs/EVIDENCE.md)</sub>
 
+**🎬 Narrated walkthrough (1:42):** [watch with captions](docs/demo/hermes-budget-router-demo.mp4) · [toggleable-captions version](docs/demo/hermes-budget-router-demo-cc.mp4) · [captions file (.srt)](docs/demo/hermes-budget-router-demo.en.srt). A simple question routed to Haiku ($0.0027) and a complex one routed to Opus ($0.1389), from the same agent, with the measured cost of each.
+
+[![Comparison: simple question on Haiku cost $0.0027, complex question on Opus cost $0.1389](docs/demo/04-comparison-card.png)](docs/demo/hermes-budget-router-demo.mp4)
+
 ---
+
+## About Hermes Agent
+
+This project is an add-on for **[Hermes Agent](https://hermes-agent.nousresearch.com)**, an open-source AI agent built by **[Nous Research](https://nousresearch.com)** and released under the MIT licence ([source](https://github.com/NousResearch/hermes-agent)). It isn't part of Hermes and isn't affiliated with or endorsed by Nous Research.
+
+What Hermes is, in short ([its docs](https://hermes-agent.nousresearch.com/docs)):
+
+- **An agent you run yourself:** on your laptop, a small server, or cloud infrastructure, from the terminal or from messaging apps such as Telegram, Discord, Slack, WhatsApp and Signal.
+- **It remembers and learns:** persistent memory across sessions, and reusable *skills* it writes and improves from experience.
+- **It acts, not just chats:** built-in tools (files, code, web, browsing, scheduling) plus MCP servers, with subagents for parallel work.
+- **It brings no model of its own.** You connect it to a provider (Anthropic, OpenAI, Google, OpenRouter, a local model) and pay that provider per token.
+
+That last point is why this repo exists. Hermes gives you the choice of model, and with it the bill. `h` makes that choice per task, before each session, and shows what it cost.
 
 ## Why this exists
 
@@ -144,5 +161,17 @@ python3 -m unittest discover -s tests     # 39 tests, no network needed
 ```
 
 ---
+
+## Credits
+
+- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** by Nous Research (MIT): the agent this project routes for.
+- **[Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)** (Apache-2.0), run through the **[HyperFrames](https://github.com/heygen-com/hyperframes)** CLI by HeyGen: the narration voice ("Isabella").
+- **[asciinema](https://asciinema.org)** and **[agg](https://github.com/asciinema/agg)**: terminal recording and GIF rendering.
+- **[pyte](https://github.com/selectel/pyte)**, **Pillow** and **FFmpeg**: rendering the narrated video ([`docs/demo/video/`](docs/demo/video)).
+- Model prices: [Anthropic's pricing page](https://platform.claude.com/docs/en/about-claude/pricing).
+
+## Licence
+
+Code and docs: MIT, © 2026 Raja Shahnawaz Soni. **The narrated videos (`docs/demo/hermes-budget-router-demo*.mp4`) are © 2026 Raja Shahnawaz Soni · [trykarkedekho.com](https://trykarkedekho.com), all rights reserved.** You can link to them and embed them with credit. See [NOTICE](NOTICE).
 
 *Not affiliated with Anthropic, OpenAI, Google, xAI, OpenRouter or Nous Research. Product names belong to their owners.*

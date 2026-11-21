@@ -1,0 +1,8 @@
+{
+  "simple": {"label": "Simple question", "question": "what is compound interest in one sentence",
+             "model": "Haiku 5.5", "cost": "$0.0027", "detail": "90 output tokens · answered in ~2 s"},
+  "complex": {"label": "Complex question", "question": "team keeps missing deadlines: 30-day fix plan",
+              "model": "Opus 5.5", "cost": "$0.1389", "detail": "1,531 output tokens · answered in ~20 s"},
+  "notes": ["About 51× apart. Hermes' estimate and an independent recalculation from Anthropic's published prices match.",
+            "Measured on 21 Nov 2026 with h --sessions. Your provider's bill is the final word."]
+}

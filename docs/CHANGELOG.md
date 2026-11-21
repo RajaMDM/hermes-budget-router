@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0 (launch assets), 21 Nov 2026
+- **Narrated demo video** (1:42): simple vs complex question, real recording, Kokoro voice "Isabella", captions burned in plus a toggleable track and `.srt`, © trykarkedekho.com watermark. Reproducible pipeline in `docs/demo/video/`.
+- **About Hermes Agent** section with attribution to Nous Research. Credits for Kokoro, HyperFrames, asciinema. `NOTICE` keeps the videos all-rights-reserved while the code stays MIT.
+
 ## 0.3.0 (evidence update), 21 Nov 2026
 - `h --sessions [N] [--csv] [--schema]`: per-session tokens, cache use, tool calls, Hermes' estimate, and an **independent recomputation from published prices**. Exact column whitelist, so prompts, IDs and JSON never print.
 - `docs/EVIDENCE.md`: every public number mapped to its proof.
