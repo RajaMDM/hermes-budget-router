@@ -225,47 +225,52 @@ class TestSessions(unittest.TestCase):
     def _db(self):
         db = tmpdir() / "state.db"
         con = sqlite3.connect(db)
-        con.execute("CREATE TABLE sessions (id TEXT, title TEXT, model TEXT, started_at REAL, "
-                    "message_count INT, tool_call_count INT, input_tokens INT, output_tokens INT, "
-                    "estimated_cost_usd REAL, secret_blob TEXT)")
-        con.executemany("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)", [
-            ("a", "private topic", "claude-opus-5-5", dt.datetime(2026, 11, 21, 12, 5).timestamp(), 24, 20, 90000, 3000, 0.38, "x"),
-            ("b", "survivorship", "claude-haiku-5-5", dt.datetime(2026, 11, 21, 13, 9).timestamp(), 2, 0, 9000, 60, 0.001, "y")])
+        con.execute("CREATE TABLE sessions (id TEXT, user_id TEXT, title TEXT, model TEXT, model_config TEXT, "
+                    "started_at REAL, message_count INT, api_call_count INT, tool_call_count INT, "
+                    "input_tokens INT, output_tokens INT, cache_read_tokens INT, cache_write_tokens INT, "
+                    "reasoning_tokens INT, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, "
+                    "cost_source TEXT, hidden INT, chat_id TEXT, prompt_cache_clock TEXT)")
+        rows = [
+            ("local-aaaaaaaaaaaaaaaa", "uid:501", "private topic", "claude-opus-5-5", "{}",
+             dt.datetime(2026, 11, 21, 12, 5).timestamp(), 24, 21, 20, 1000, 3000, 200000, 30000, 0,
+             0.38, None, "estimated", "provider_models_api", 0, "c", "{}"),
+            ("local-bbbbbbbbbbbbbbbb", "uid:501", "survivorship", "claude-haiku-5-5", "{}",
+             dt.datetime(2026, 11, 21, 14, 50).timestamp(), 2, 1, 0, 4, 131, 0, 21693, 0,
+             0.0028, None, "estimated", "provider_models_api", 0, "c", "{}"),
+        ]
+        con.executemany(f"INSERT INTO sessions VALUES ({','.join('?' * 21)})", rows)
         con.commit()
         con.close()
         return db
 
-    def test_detects_columns_hides_titles_and_unknowns(self):
+    def test_whitelist_only(self):
         cols, rows = h.read_sessions(self._db(), limit=5)
-        self.assertNotIn("title", cols)
-        self.assertNotIn("secret_blob", cols)
-        self.assertIn("tool_call_count", cols)
-        self.assertEqual(rows[0][0], "b")  # newest first
+        for bad in ("title", "user_id", "model_config", "hidden", "chat_id", "prompt_cache_clock", "cost_source"):
+            self.assertNotIn(bad, cols)
+        self.assertIn("tools", cols)
+        self.assertEqual(rows[0][0], "bbbbbbbbbb")  # newest first, short id
+
+    def test_recompute_matches_real_haiku_session(self):
+        # Real row from a Hermes v0.23 session: 4 in, 131 out, 21,693 cache-write tokens, Hermes said $0.0028.
+        rc = h.recompute_cost("claude-haiku-5-5", {"input_tokens": 4, "output_tokens": 131, "cache_write_tokens": 21693})
+        self.assertAlmostEqual(rc, 0.0028, places=4)
+
+    def test_unknown_model_not_recomputed(self):
+        self.assertIsNone(h.recompute_cost("some-other-model", {"input_tokens": 10}))
 
     def test_titles_opt_in_and_csv(self):
         cols, rows = h.read_sessions(self._db(), limit=5, titles=True)
         out = h.format_sessions(cols, rows, as_csv=True)
         self.assertIn("private topic", out)
-        self.assertIn("0.3800", out)
         self.assertIn("2026-11-21 12:05", out)
+        self.assertIn("recomputed_usd", out.splitlines()[0])
 
-    def test_text_cost_column_does_not_crash_total(self):
-        db = tmpdir() / "state.db"
-        con = sqlite3.connect(db)
-        con.execute("CREATE TABLE sessions (id TEXT, started_at REAL, estimated_cost_usd REAL, cost_source TEXT)")
-        con.execute("INSERT INTO sessions VALUES ('a', 1795257547, 0.0123, 'estimated')")
-        con.execute("INSERT INTO sessions VALUES ('b', 1795257548, NULL, NULL)")
-        con.commit()
-        con.close()
-        cols, rows = h.read_sessions(db, limit=5)
-        self.assertIn("cost_source", cols)
-        out = h.format_sessions(cols, rows)
-        self.assertIn("estimated", out)
-        self.assertIn("$0.0123", out)
-
-    def test_text_table_total(self):
+    def test_text_table_totals(self):
         cols, rows = h.read_sessions(self._db(), limit=5)
-        self.assertIn("$0.3810", h.format_sessions(cols, rows))
+        out = h.format_sessions(cols, rows)
+        self.assertIn("Hermes estimate $0.3828", out)
+        self.assertIn("recomputed from published prices", out)
+        self.assertNotIn("uid:501", out)
 
 
 class TestInit(unittest.TestCase):

@@ -44,3 +44,9 @@
 - `-q` launch confirmed: question sent as the first turn, session stays interactive.
 - Quality caveat: Haiku took "survivorship" literally (survivorship bias). Opus had inferred MDM from context. Domain words matter more on cheap tiers.
 - SOUL footer bug: with the old wording the model dropped the task cost when printing "cycle: ask". Reworded.
+
+## Hermes state.db `sessions` (v0.23, 72 columns)
+- Useful: started_at, model, message_count, api_call_count, tool_call_count, input/output/cache_read/cache_write/reasoning_tokens, estimated_cost_usd, actual_cost_usd (empty), cost_status ('estimated'), cost_source ('provider_models_api').
+- Never print: model_config / prompt_cache_clock (JSON), system_prompt, user_id, chat_id, cwd, git_*, title (opt-in only).
+- `h --sessions` uses an exact whitelist. The first version matched substrings ("id" matched "hidden"), which dumped JSON and a text `cost_*` column, and crashed the total.
+- Finding: each new session writes ~21.7K tokens to the cache before the first answer. On Haiku 5.5, 21,693 × $0.125/M + 4 × $0.10/M + 131 × $0.50/M = $0.0028, matching Hermes' estimate exactly.

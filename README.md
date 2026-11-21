@@ -21,7 +21,8 @@ $ h design the target-state architecture for multi-region customer MDM
 
 1. **The model is fixed for the whole session, and switching mid-session is expensive.** Hermes can't change model in the middle of a reply. If you change it mid-conversation, the prompt cache is thrown away and you pay for the full context again. So the right moment to pick a model is **before** the session starts.
 2. **Tool loops cost more than model choice.** In our runs, two questions that set off 20 tool calls cost ~$0.38. A direct answer on the same model cost ~$0.02 (Hermes' estimates; see [evidence](docs/EVIDENCE.md)). Per token, Opus 5.5 is only 2× Sonnet 5.5 ([Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)).
-3. **People pay for capacity they never use.** Claude Max/Ultra plans include $100–$200 a month of API credit that most agent setups never reach ([guide](docs/guides/claude-api-credits.md)).
+3. **Every new session has a setup cost.** Hermes sends ~22K tokens of setup (system prompt, tools, skills) before reading your question. On Haiku that costs ~$0.003, on Opus ~$0.11 ([evidence](docs/EVIDENCE.md) #14). Picking the model up front matters even for a one-line question.
+4. **People pay for capacity they never use.** Claude Max/Ultra plans include $100–$200 a month of API credit that most agent setups never reach ([guide](docs/guides/claude-api-credits.md)).
 
 ## Which setup are you?
 
@@ -76,7 +77,7 @@ Needs Python 3.9+ and Hermes on your PATH. API keys are read from your environme
 | `h --check` | Verify each tier: key present, model offered by the provider |
 | `h --budget` | Cycle spend, days left, projected spend |
 | `h --stats` | Routing mix and models used, last 30 days |
-| `h --sessions [N] [--csv]` | Last N Hermes sessions: tokens, tool calls, estimated cost (titles hidden unless `--titles`) |
+| `h --sessions [N] [--csv]` | Last N Hermes sessions: tokens, cache use, tool calls, Hermes' cost estimate **and an independent recomputation from published prices** (titles hidden unless `--titles`) |
 | `h --eval tasks.txt > routes.csv` · `h --score routes.csv` | Measure routing accuracy against your own labels |
 
 Quote tasks containing `? * ! $ '`, e.g. `h "what's the cost?"`.
@@ -137,7 +138,7 @@ h --score routes.csv
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests     # 36 tests, no network needed
+python3 -m unittest discover -s tests     # 39 tests, no network needed
 ```
 
 ---

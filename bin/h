@@ -384,46 +384,80 @@ def read_budget(cfg: Config, db: Path = STATE_DB, today: dt.date | None = None) 
 
 
 # ================================================================ session evidence
-SESSION_COLUMN_HINTS = ("id", "title", "model", "provider", "source", "start", "created", "ended",
-                        "message", "tool", "token", "cache", "cost", "duration")
+# Columns worth showing, in display order, with short headers. Matched exactly against Hermes'
+# sessions table (v0.23 schema); anything else (prompts, chat ids, JSON blobs) is never printed.
+SESSION_COLUMNS: list[tuple[str, str]] = [
+    ("id", "session"), ("started_at", "started"), ("model", "model"),
+    ("message_count", "msgs"), ("api_call_count", "api_calls"), ("tool_call_count", "tools"),
+    ("input_tokens", "in_tok"), ("output_tokens", "out_tok"),
+    ("cache_read_tokens", "cache_rd"), ("cache_write_tokens", "cache_wr"), ("reasoning_tokens", "reason_tok"),
+    ("estimated_cost_usd", "hermes_est_usd"), ("actual_cost_usd", "actual_usd"), ("cost_status", "status"),
+]
+
+# Published list prices, USD per million tokens: input, output, 5-minute cache write, cache read.
+# Source: https://platform.claude.com/docs/en/about-claude/pricing (Nov 2026). Haiku: prompts up to 100K tokens.
+# Used only to recompute Hermes' estimate independently; extend for other providers' models.
+PRICES: dict[str, tuple[float, float, float, float]] = {
+    "claude-opus-5-5": (4.00, 20.00, 5.00, 0.20),
+    "claude-sonnet-5-5": (2.00, 10.00, 2.50, 0.10),
+    "claude-haiku-5-5": (0.10, 0.50, 0.125, 0.01),
+}
+
+
+def recompute_cost(model: str, tokens: dict[str, float]) -> float | None:
+    """Cost from token counts x published prices. None if the model isn't in PRICES.
+    Assumes 5-minute cache writes; reasoning tokens are billed as output and are assumed to be
+    included in output_tokens (if Hermes counts them separately, this under-counts them)."""
+    p = PRICES.get(model)
+    if not p:
+        return None
+    g = lambda k: float(tokens.get(k) or 0)
+    return (g("input_tokens") * p[0] + g("output_tokens") * p[1]
+            + g("cache_write_tokens") * p[2] + g("cache_read_tokens") * p[3]) / 1_000_000
 
 
 def read_sessions(db: Path = STATE_DB, limit: int = 10, titles: bool = False) -> tuple[list[str], list[tuple]]:
-    """Return (columns, rows) for the most recent sessions. Columns are auto-detected from the schema
-    because Hermes' state.db layout isn't documented. Titles are dropped unless asked for (privacy)."""
+    """Return (headers, rows) for the most recent sessions, newest first, plus a 'recomputed_usd'
+    column. Only whitelisted columns are read; titles only with titles=True."""
     if not db.exists():
         raise SystemExit(f"h: no Hermes database at {db}")
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
     try:
-        cols = [r[1] for r in con.execute("PRAGMA table_info(sessions)")]
-        if not cols:
+        available = {r[1] for r in con.execute("PRAGMA table_info(sessions)")}
+        if not available:
             raise SystemExit("h: state.db has no sessions table")
-        keep = [c for c in cols if any(h in c.lower() for h in SESSION_COLUMN_HINTS)]
-        if not titles:
-            keep = [c for c in keep if "title" not in c.lower()]
-        order = next((c for c in ("started_at", "created_at", "start_time", "updated_at", "timestamp")
-                      if c in cols), "rowid")
-        quoted = ", ".join(f'"{c}"' for c in keep)
-        rows = con.execute(f"SELECT {quoted} FROM sessions ORDER BY {order} DESC LIMIT ?", (limit,)).fetchall()
+        wanted = list(SESSION_COLUMNS)
+        if titles:
+            wanted.insert(3, ("title", "title"))
+        cols = [(c, hdr) for c, hdr in wanted if c in available]
+        order = next((c for c in ("started_at", "created_at", "start_time") if c in available), "rowid")
+        quoted = ", ".join(f'"{c}"' for c, _ in cols)
+        raw = con.execute(f"SELECT {quoted} FROM sessions ORDER BY {order} DESC LIMIT ?", (limit,)).fetchall()
     finally:
         con.close()
-    return keep, rows
+    names = [c for c, _ in cols]
+    headers = [hdr for _, hdr in cols] + ["recomputed_usd"]
+    rows = []
+    for r in raw:
+        rec = dict(zip(names, r))
+        if rec.get("id"):
+            sid = str(rec["id"])
+            rec["id"] = sid.split("-", 1)[-1][:10]  # short, still unique enough to cross-reference
+        rc = recompute_cost(str(rec.get("model") or ""), rec)
+        rows.append(tuple(rec[c] for c in names) + (rc,))
+    return headers, rows
 
 
 def format_sessions(cols: list[str], rows: list[tuple], as_csv: bool = False) -> str:
-    """Render sessions as CSV or an aligned text table, with readable timestamps."""
+    """Render sessions as CSV or an aligned table with totals for Hermes' estimate and the recomputation."""
     def cell(c: str, v: object) -> str:
         if v is None:
             return ""
-        if any(k in c.lower() for k in ("start", "created", "ended", "updated", "timestamp")):
+        if c in ("started",):
             d = _to_datetime(v)
-            if d:
-                return d.strftime("%Y-%m-%d %H:%M")
-        if "cost" in c.lower():
-            try:
-                return f"{float(v):.4f}"
-            except (TypeError, ValueError):
-                pass
+            return d.strftime("%Y-%m-%d %H:%M") if d else str(v)
+        if c.endswith("_usd") and _is_number(v):
+            return f"{float(v):.4f}"
         return str(v)
 
     table = [[cell(c, v) for c, v in zip(cols, r)] for r in rows]
@@ -436,12 +470,20 @@ def format_sessions(cols: list[str], rows: list[tuple], as_csv: bool = False) ->
     widths = [max([len(c)] + [len(r[i]) for r in table]) for i, c in enumerate(cols)]
     line = lambda vals: "  ".join(v.ljust(widths[i]) for i, v in enumerate(vals))
     out = [line(cols), line(["-" * w for w in widths])] + [line(r) for r in table]
-    total = 0.0
-    for raw in rows:
-        for c, v in zip(cols, raw):
-            if "cost" in c.lower() and _is_number(v):  # skip text columns such as a cost source/status
-                total += float(v)
-    out.append(f"Estimated cost of these {len(rows)} sessions: ${total:.4f} (Hermes' estimate; your provider's bill is the source of truth)")
+
+    def total(col: str) -> float | None:
+        if col not in cols:
+            return None
+        i = cols.index(col)
+        vals = [float(r[i]) for r in rows if _is_number(r[i])]
+        return sum(vals) if vals else None
+
+    est, rec = total("hermes_est_usd"), total("recomputed_usd")
+    summary = f"{len(rows)} sessions · Hermes estimate ${est or 0:.4f}"
+    if rec is not None:
+        summary += f" · recomputed from published prices ${rec:.4f}"
+    out.append(summary)
+    out.append("Both are estimates. Your provider's billing page is the source of truth.")
     return "\n".join(out)
 
 
