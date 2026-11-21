@@ -8,12 +8,12 @@
 ```text
 $ h what is survivorship in one sentence
 → Haiku (anthropic/claude-haiku-5-5): Simple definition request; quick factual answer suffices.
-  cycle ~$0.88 of $200 (0%) · 19d left · pace ~$1
+  cycle ~$0.90 of $200 (0%) · 19d left · pace ~$2
 
 $ h design the target-state architecture for multi-region customer MDM
 → Opus (anthropic/claude-opus-5-5): Multi-region architecture with design trade-offs.
 ```
-<sub>First decision is from a real run. The second is illustrative.</sub>
+<sub>First decision and budget line are from a real run on Hermes v0.23.3. The second is illustrative.</sub>
 
 ---
 
@@ -125,6 +125,8 @@ h --score routes.csv
 | [`docs/DEFENSE_BRIEF.md`](docs/DEFENSE_BRIEF.md) | Why each design choice was made, and what was rejected |
 
 ## Limits, stated plainly
+
+- **Cheaper models are more literal.** In testing, "what is survivorship" sent to the quick tier came back as *survivorship bias* (statistics). The strong model had inferred the MDM meaning. Name the domain in quick questions: `h what is MDM survivorship`.
 
 - **Cost figures are Hermes' estimates** from its own price table, not your provider's bill. Check them against your provider's console.
 - **Needs Hermes v0.23+ for one-step launch.** Older builds lack `-q`. Use `H_FIRST_MESSAGE_FLAG=clipboard` and paste instead.

@@ -37,3 +37,10 @@
 
 - Hermes v0.23 `hermes chat -q QUERY`: on a real TTY it seeds an interactive session (the first turn, submitted literally). With `--oneshot`/`-Q` or on a non-TTY it answers and exits. `--query-file` exists for text that mustn't be shell-interpreted, but h uses `execvp`, so there's no shell and `-q` is safe.
 - `hermes chat --reasoning LEVEL` (none…ultra) overrides `agent.reasoning_effort` per run.
+
+## Field results (21 Nov 2026, macOS, Hermes v0.23.3)
+- `h --check`: key + haiku/sonnet/opus 5.5 all listed via GET /v1/models. The `sk-ant-usr` key works for /models.
+- `read_budget` works on the real state.db: cycle ~$0.90, pace ~$2.
+- `-q` launch confirmed: question sent as the first turn, session stays interactive.
+- Quality caveat: Haiku took "survivorship" literally (survivorship bias). Opus had inferred MDM from context. Domain words matter more on cheap tiers.
+- SOUL footer bug: with the old wording the model dropped the task cost when printing "cycle: ask". Reworded.

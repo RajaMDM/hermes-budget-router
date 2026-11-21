@@ -240,7 +240,7 @@ See the [main README](../../README.md#h-the-launcher). For this setup: `h --init
 
 ## 7. What's verified and what isn't
 
-**Verified in this setup:** every command, error and fix in sections 1–4. Hermes v0.23.3 working against the API key. The `h` classifier routing a definition to Haiku and launching Hermes on it.
+**Verified in this setup:** every command, error and fix in sections 1–4. Hermes v0.23.3 working against the API key. `h --check` confirming key and all three models. `h` routing a definition to Haiku, reading the real cycle spend from `state.db`, and opening Hermes with the question already sent via `-q`.
 
 **Not verified / your mileage may vary:**
 - **Budget figures** come from Hermes' own price table, not the Console. Compare them with the Console for a day before trusting them. Reading the real balance needs an admin key, which we deliberately don't give an agent.
