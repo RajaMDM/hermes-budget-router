@@ -249,6 +249,20 @@ class TestSessions(unittest.TestCase):
         self.assertIn("0.3800", out)
         self.assertIn("2026-11-21 12:05", out)
 
+    def test_text_cost_column_does_not_crash_total(self):
+        db = tmpdir() / "state.db"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE sessions (id TEXT, started_at REAL, estimated_cost_usd REAL, cost_source TEXT)")
+        con.execute("INSERT INTO sessions VALUES ('a', 1795257547, 0.0123, 'estimated')")
+        con.execute("INSERT INTO sessions VALUES ('b', 1795257548, NULL, NULL)")
+        con.commit()
+        con.close()
+        cols, rows = h.read_sessions(db, limit=5)
+        self.assertIn("cost_source", cols)
+        out = h.format_sessions(cols, rows)
+        self.assertIn("estimated", out)
+        self.assertIn("$0.0123", out)
+
     def test_text_table_total(self):
         cols, rows = h.read_sessions(self._db(), limit=5)
         self.assertIn("$0.3810", h.format_sessions(cols, rows))

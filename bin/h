@@ -15,7 +15,7 @@ Usage:
   h --presets           list bundled presets
   h --check             verify keys and that each tier's model exists at its provider
   h --budget            this cycle's estimated spend and pace
-  h --sessions [N] [--csv] [--titles]
+  h --sessions [N] [--csv] [--titles] [--schema]
                         last N Hermes sessions with tokens, tool calls and estimated cost
                         (from Hermes' state.db; titles hidden unless --titles)
   h --stats             summarise past routing decisions
@@ -436,9 +436,23 @@ def format_sessions(cols: list[str], rows: list[tuple], as_csv: bool = False) ->
     widths = [max([len(c)] + [len(r[i]) for r in table]) for i, c in enumerate(cols)]
     line = lambda vals: "  ".join(v.ljust(widths[i]) for i, v in enumerate(vals))
     out = [line(cols), line(["-" * w for w in widths])] + [line(r) for r in table]
-    total = sum(float(r[i] or 0) for r in table for i, c in enumerate(cols) if "cost" in c.lower() and r[i])
+    total = 0.0
+    for raw in rows:
+        for c, v in zip(cols, raw):
+            if "cost" in c.lower() and _is_number(v):  # skip text columns such as a cost source/status
+                total += float(v)
     out.append(f"Estimated cost of these {len(rows)} sessions: ${total:.4f} (Hermes' estimate; your provider's bill is the source of truth)")
     return "\n".join(out)
+
+
+def _is_number(value: object) -> bool:
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        float(value)  # type: ignore[arg-type]
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 def _to_datetime(value: object) -> dt.datetime | None:
@@ -702,6 +716,12 @@ def main(argv: list[str]) -> int:
         return 0
     if cmd == "--sessions":
         rest = argv[1:]
+        if "--schema" in rest:
+            con = sqlite3.connect(f"file:{STATE_DB}?mode=ro", uri=True, timeout=2)
+            for r in con.execute("PRAGMA table_info(sessions)"):
+                print(f"  {r[1]:<32} {r[2]}")
+            con.close()
+            return 0
         n = next((int(a) for a in rest if a.isdigit()), 10)
         cols, rows = read_sessions(limit=n, titles="--titles" in rest)
         print(format_sessions(cols, rows, as_csv="--csv" in rest))
