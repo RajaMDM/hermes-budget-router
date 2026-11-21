@@ -28,6 +28,24 @@ What Hermes is, in short ([its docs](https://hermes-agent.nousresearch.com/docs)
 
 That last point is why this repo exists. Hermes gives you the choice of model, and with it the bill. `h` makes that choice per task, before each session, and shows what it cost.
 
+### New to Hermes? Start here
+
+1. **Install Hermes** (official installers, per the [Hermes docs](https://hermes-agent.nousresearch.com/docs)):
+   - **macOS or Windows:** download the Hermes Desktop installer from the Hermes site, or use the command line below.
+   - **Linux, macOS, WSL2:**
+     ```bash
+     curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     iex (irm https://hermes-agent.nousresearch.com/install.ps1)
+     ```
+2. **Connect a model.** Run `hermes model` and pick a provider, or `hermes setup --portal` for Nous Portal (one sign-in for a model plus web search, image, voice and browser tools). On **Claude Max, Ultra or Team**, use an API key so you spend your included credit: follow the [Claude credits guide](docs/guides/claude-api-credits.md) before anything else. For other setups, see the [other setups guide](docs/guides/other-setups.md).
+3. **Say hello:** `hermes chat`, ask anything, and `/exit` when you're done. Inside a chat, `/usage` shows tokens for that session.
+4. **Then add `h`** (below), so each new session starts on the right model.
+
+Hermes' own [Quickstart](https://hermes-agent.nousresearch.com/docs) covers features to try next: memory, skills, scheduled jobs, and messaging apps. Before running anything, check the install page: installers and flags change between releases.
+
 ## Why this exists
 
 1. **The model is fixed for the whole session, and switching mid-session is expensive.** Hermes can't change model in the middle of a reply. If you change it mid-conversation, the prompt cache is thrown away and you pay for the full context again. So the right moment to pick a model is **before** the session starts.
@@ -164,11 +182,20 @@ python3 -m unittest discover -s tests     # 39 tests, no network needed
 
 ## Credits
 
-- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** by Nous Research (MIT): the agent this project routes for.
-- **[Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)** (Apache-2.0), run through the **[HyperFrames](https://github.com/heygen-com/hyperframes)** CLI by HeyGen: the narration voice ("Isabella").
-- **[asciinema](https://asciinema.org)** and **[agg](https://github.com/asciinema/agg)**: terminal recording and GIF rendering.
-- **[pyte](https://github.com/selectel/pyte)**, **Pillow** and **FFmpeg**: rendering the narrated video ([`docs/demo/video/`](docs/demo/video)).
-- Model prices: [Anthropic's pricing page](https://platform.claude.com/docs/en/about-claude/pricing).
+This project builds on other people's work. Thank you to:
+
+| Project | By | Licence | Used for |
+|---|---|---|---|
+| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | [Nous Research](https://nousresearch.com) | MIT | The agent this project routes for |
+| [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) | hexgrad | Apache-2.0 | Narration voice ("Isabella", `bf_isabella`) |
+| [HyperFrames](https://github.com/heygen-com/hyperframes) | HeyGen | Apache-2.0 | Running Kokoro text-to-speech (`hyperframes tts`) |
+| [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) | thewh1teagle | see project | Kokoro runtime used by HyperFrames |
+| [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | SYSTRAN | MIT | Transcribing the narration back to check every line |
+| [asciinema](https://asciinema.org) and [agg](https://github.com/asciinema/agg) | asciinema | see projects | Recording the real terminal sessions; GIF rendering |
+| [pyte](https://github.com/selectel/pyte), [Pillow](https://python-pillow.org), [FFmpeg](https://ffmpeg.org) | their maintainers | see projects | Rendering the narrated video |
+| [Claude](https://www.anthropic.com/claude) models via the [Claude API](https://platform.claude.com) | Anthropic | commercial API | The models in the demo. Prices from [Anthropic's pricing page](https://platform.claude.com/docs/en/about-claude/pricing) |
+
+Built with help from Claude (Anthropic) as a coding and writing assistant. Licences marked "see project" weren't confirmed from package metadata, so check each project's own licence file. None of these projects is affiliated with or endorses this one.
 
 ## Licence
 

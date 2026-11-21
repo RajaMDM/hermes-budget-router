@@ -12,6 +12,10 @@ You may link to them and embed them unmodified with attribution. Any other use n
 
 Third-party components used to produce the videos (not distributed in this repository):
   - Hermes Agent, Nous Research, MIT License (the software shown)
-  - Kokoro-82M text-to-speech model, Apache License 2.0 (narration voice "bf_isabella")
-  - HyperFrames CLI, HeyGen (used to run Kokoro)
-  - asciinema / agg (terminal recording)
+  - Kokoro-82M text-to-speech model (hexgrad), Apache License 2.0 (narration voice "bf_isabella")
+  - HyperFrames CLI (HeyGen), Apache License 2.0 (used to run Kokoro)
+  - kokoro-onnx (thewh1teagle), Kokoro runtime
+  - faster-whisper (SYSTRAN), MIT License (narration transcription check)
+  - asciinema / agg (terminal recording and GIF rendering)
+  - pyte, Pillow, FFmpeg (video rendering)
+  - Claude models (Anthropic), via the Claude API (the models shown)
