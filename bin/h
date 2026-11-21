@@ -45,7 +45,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 ENV_FILE = HERMES_HOME / ".env"
@@ -239,7 +239,7 @@ def _auth_variants(endpoint: dict, key: str) -> list[dict]:
     return [{"authorization": f"Bearer {key}"}] if key else [{}]
 
 
-def chat(endpoint: dict, key: str, model: str, system: str, user: str, max_tokens: int = 60) -> str | None:
+def chat(endpoint: dict, key: str, model: str, system: str, user: str, max_tokens: int = 400) -> str | None:
     """Single-turn completion via the endpoint's API style. Returns text or None."""
     base = endpoint["base_url"].rstrip("/")
     for headers in _auth_variants(endpoint, key):
@@ -248,11 +248,18 @@ def chat(endpoint: dict, key: str, model: str, system: str, user: str, max_token
                 data = _http_json(f"{base}/messages", headers, {
                     "model": model, "max_tokens": max_tokens, "system": system,
                     "messages": [{"role": "user", "content": user}]})
-                return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+                text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+                if not text:
+                    log.debug("Empty reply: stop_reason=%s, block types=%s, usage=%s", data.get("stop_reason"),
+                              [b.get("type") for b in data.get("content", [])], data.get("usage"))
+                return text
             data = _http_json(f"{base}/chat/completions", headers, {
                 "model": model, "max_tokens": max_tokens,
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]})
-            return data["choices"][0]["message"]["content"] or ""
+            msg = data["choices"][0]
+            if not msg["message"].get("content"):
+                log.debug("Empty reply: finish_reason=%s, usage=%s", msg.get("finish_reason"), data.get("usage"))
+            return msg["message"].get("content") or ""
         except urllib.error.HTTPError as exc:
             log.debug("HTTP %s from %s (%s)", exc.code, base, ",".join(headers))
             if exc.code in (401, 403) and endpoint["api"] == "anthropic":

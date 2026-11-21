@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.3, 21 Nov 2026
+- **Classifier reply budget 60 → 400 tokens.** Harder tasks came back as an empty reply (`Classifier unusable reply: ''`), so they fell to the keyword fallback. Debug mode now logs `stop_reason`, block types and usage when a reply is empty. Cost per routing call stays a fraction of a cent: the reply is still ~20 tokens, and the budget is only a ceiling.
+
 ## 0.3.2, 21 Nov 2026
 - **Offline fallback errs towards adequate, not cheapest.** When the classifier call fails, plan, diagnose, strategy, draft, steps and similar requests now go to the standard tier, where before any request under 25 words went to the quick tier. Found when a classifier hiccup sent a "30-day fix plan" request to Haiku.
 

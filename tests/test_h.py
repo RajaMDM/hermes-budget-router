@@ -130,6 +130,10 @@ class TestAdapters(unittest.TestCase):
         self.assertIn('"o"', out)
         self.assertEqual(u.call_args[0][0].get_header("Authorization"), "Bearer k")
 
+    def test_classifier_budget_is_not_tiny(self):
+        import inspect
+        self.assertGreaterEqual(inspect.signature(h.chat).parameters["max_tokens"].default, 300)
+
     def test_list_models_strips_prefix(self):
         body = json.dumps({"data": [{"id": "models/gemini-3.5-flash"}]}).encode()
         with mock.patch("urllib.request.urlopen", return_value=FakeResp(body)):
