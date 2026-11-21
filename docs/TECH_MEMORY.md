@@ -34,3 +34,6 @@
 - Placeholders containing `REPLACE` are rejected at load time, so unfinished presets fail loudly instead of launching a bad model.
 - Presets are found next to the script (`bin/../presets`), with symlinks resolved. A curl-only install of `bin/h` won't see presets. Use git clone plus a symlink.
 - Python 3.9+ (`str.removeprefix`).
+
+- Hermes v0.23 `hermes chat -q QUERY`: on a real TTY it seeds an interactive session (the first turn, submitted literally). With `--oneshot`/`-Q` or on a non-TTY it answers and exits. `--query-file` exists for text that mustn't be shell-interpreted, but h uses `execvp`, so there's no shell and `-q` is safe.
+- `hermes chat --reasoning LEVEL` (none…ultra) overrides `agent.reasoning_effort` per run.

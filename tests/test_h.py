@@ -197,6 +197,30 @@ class TestCheck(unittest.TestCase):
         self.assertIn("not offered", out)  # sonnet missing from fake list
 
 
+class TestLaunchArgs(unittest.TestCase):
+    def test_query_flag_by_default(self):
+        with mock.patch.dict("os.environ", {}, clear=True):
+            args = h.build_args("what is MDM", CFG.tiers["q"])
+        self.assertEqual(args[-2:], ["-q", "what is MDM"])
+        self.assertNotIn("--reasoning", args)
+
+    def test_clipboard_mode(self):
+        with mock.patch.dict("os.environ", {"H_FIRST_MESSAGE_FLAG": "clipboard"}):
+            self.assertNotIn("what is MDM", h.build_args("what is MDM", CFG.tiers["q"]))
+
+    def test_reasoning_passed(self):
+        raw = json.loads(json.dumps(h.DEFAULT_CONFIG))
+        raw["tiers"]["o"]["reasoning"] = "high"
+        args = h.build_args("x", h.parse_config(raw).tiers["o"])
+        self.assertEqual(args[args.index("--reasoning") + 1], "high")
+
+    def test_bad_reasoning_rejected(self):
+        raw = json.loads(json.dumps(h.DEFAULT_CONFIG))
+        raw["tiers"]["o"]["reasoning"] = "turbo"
+        with self.assertRaises(ValueError):
+            h.parse_config(raw)
+
+
 class TestLogStatsEval(unittest.TestCase):
     def test_log_stats(self):
         p = tmpdir() / "log.jsonl"

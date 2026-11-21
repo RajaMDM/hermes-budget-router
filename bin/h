@@ -21,7 +21,8 @@ Usage:
   h --version | --help
 
 Config: ~/.hermes/h.json (or $H_CONFIG). Without one, the built-in default is the
-"claude-credits" preset. Env: H_PAUSE, H_FIRST_MESSAGE_FLAG, H_LOG_TASKS=0, H_DEBUG=1.
+"claude-credits" preset. Each tier may set "reasoning" (none..ultra) → hermes --reasoning.
+Env: H_PAUSE, H_FIRST_MESSAGE_FLAG (default -q; "clipboard" for old Hermes), H_LOG_TASKS=0, H_DEBUG=1.
 """
 from __future__ import annotations
 
@@ -52,6 +53,7 @@ PRESET_DIRS = [Path(__file__).resolve().parent.parent / "presets",
                Path.home() / ".local" / "share" / "h" / "presets"]
 TIERS = ("q", "s", "o")
 TIER_NAMES = {"q": "quick", "s": "standard", "o": "strong"}
+REASONING_LEVELS = {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
 
 # How h talks to each Hermes provider id for classification and --check.
 # "api": "anthropic" = Messages API; "openai" = OpenAI-compatible /chat/completions.
@@ -108,6 +110,7 @@ class Tier:
     provider: str
     model: str
     label: str = ""
+    reasoning: str = ""
 
     @property
     def name(self) -> str:
@@ -141,7 +144,10 @@ def parse_config(raw: dict) -> Config:
             raise ValueError(f"tier '{key}' needs both 'provider' and 'model'")
         if "REPLACE" in str(t["model"]).upper():
             raise ValueError(f"tier '{key}' still has a placeholder model: {t['model']}")
-        tiers[key] = Tier(key, t["provider"], t["model"], t.get("label", ""))
+        reasoning = str(t.get("reasoning", "") or "").lower()
+        if reasoning and reasoning not in REASONING_LEVELS:
+            raise ValueError(f"tier '{key}' reasoning must be one of {', '.join(sorted(REASONING_LEVELS))}")
+        tiers[key] = Tier(key, t["provider"], t["model"], t.get("label", ""), reasoning)
     classifier = raw.get("classifier_tier", "q")
     if classifier not in TIERS:
         raise ValueError("classifier_tier must be q, s or o")
@@ -552,18 +558,28 @@ def copy_to_clipboard(text: str) -> bool:
     return False
 
 
+def build_args(task: str, tier: Tier) -> list[str]:
+    """hermes chat argv. Task goes in via -q (Hermes v0.23+: seeds an interactive session on a TTY).
+    H_FIRST_MESSAGE_FLAG=clipboard restores the old copy-and-paste behaviour for older Hermes."""
+    args = ["hermes", "chat", "--provider", tier.provider, "--model", tier.model]
+    if tier.reasoning:
+        args += ["--reasoning", tier.reasoning]
+    flag = os.environ.get("H_FIRST_MESSAGE_FLAG", "-q").strip()
+    if flag and flag.lower() != "clipboard":
+        args += [flag, task]
+    return args
+
+
 def launch(task: str, tier: Tier) -> int:
     if shutil.which("hermes") is None:
         print("h: 'hermes' not found on PATH", file=sys.stderr)
         return 1
-    args = ["hermes", "chat", "--provider", tier.provider, "--model", tier.model]
-    flag = os.environ.get("H_FIRST_MESSAGE_FLAG", "").strip()
-    if flag:
-        args += [flag, task]
-    elif copy_to_clipboard(task):
-        print("  Task copied: paste it (⌘V / Ctrl+Shift+V) as your first message.")
-    else:
-        print(f"  First message: {task}")
+    args = build_args(task, tier)
+    if task not in args:  # clipboard mode for Hermes builds without -q
+        if copy_to_clipboard(task):
+            print("  Task copied: paste it (⌘V / Ctrl+Shift+V) as your first message.")
+        else:
+            print(f"  First message: {task}")
     sys.stdout.flush()
     time.sleep(float(os.environ.get("H_PAUSE", "1.5")))
     os.execvp(args[0], args)
@@ -643,7 +659,8 @@ def main(argv: list[str]) -> int:
     d = route(task, cfg, forced, budget)
     tier = cfg.tiers[d.tier]
     tag = "" if d.source == "classifier" else f" [{d.source}]"
-    print(f"→ {tier.name} ({tier.provider}/{tier.model}): {d.reason}{tag}")
+    effort = f", reasoning {tier.reasoning}" if tier.reasoning else ""
+    print(f"→ {tier.name} ({tier.provider}/{tier.model}{effort}): {d.reason}{tag}")
     if budget:
         print(f"  {budget.line()}")
     if dry_run:

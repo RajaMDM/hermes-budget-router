@@ -3,7 +3,7 @@
 Pick the right AI model **before** each Hermes session, keep an eye on your monthly budget, and stop paying for capacity you already own.
 
 ### Highlights
-- **`h` launcher.** One tiny classifier call routes each task to a quick, standard or strong tier, then launches Hermes on it. It falls back to keyword rules offline.
+- **`h` launcher.** One tiny classifier call routes each task to a quick, standard or strong tier, then opens Hermes with your task already sent. It falls back to keyword rules offline.
 - **Budget-aware.** Reads your cycle spend from Hermes' own database, tightens up when you're on pace to overspend, and leans stronger when unused credit is about to expire.
 - **Any provider, mixed tiers.** Claude, OpenAI, Gemini, Grok, OpenRouter, DeepSeek, local Ollama, plus launch-only support for ChatGPT, SuperGrok and Copilot sign-ins.
 - **10 presets** including a **$0 setup** (Gemini free tier and/or local models).

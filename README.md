@@ -47,7 +47,7 @@ $ h design the target-state architecture for multi-region customer MDM
 2. **Budget-aware:** it reads this cycle's spend from Hermes' own database. If you're on pace to overspend, the router is stricter about the strong tier. If unused credit is about to expire, it leans stronger. It never downgrades silently.
 3. **Mixes providers:** each tier is a `(provider, model)` pair, so quick tasks can stay local and only hard ones reach a paid model.
 4. **Logs:** every decision goes to `~/.hermes/h-routing.jsonl` for `--stats`.
-5. **Launches** `hermes chat --provider … --model …`.
+5. **Launches** `hermes chat --provider … --model … -q "<your task>"`, so your task arrives as the first message and the chat stays open.
 
 ### Install
 
@@ -90,7 +90,7 @@ Quote tasks containing `? * ! $ '`, e.g. `h "what's the cost?"`.
   "tiers": {
     "q": {"label": "local small", "provider": "custom",    "model": "your-ollama-tag"},
     "s": {"label": "Gemini Flash", "provider": "gemini",   "model": "gemini-3.5-flash"},
-    "o": {"label": "Claude Sonnet","provider": "anthropic","model": "claude-sonnet-5-5"}
+    "o": {"label": "Claude Sonnet","provider": "anthropic","model": "claude-sonnet-5-5", "reasoning": "high"}
   }
 }
 ```
@@ -101,7 +101,9 @@ Quote tasks containing `? * ! $ '`, e.g. `h "what's the cost?"`.
 - Subscription sign-ins (`openai-codex`, `xai-oauth`, `copilot`) can be **launched** but can't run the classifier. Add one API-key tier, or let h use keyword rules.
 - Other OpenAI-compatible servers: add `"endpoints": {"my-provider": {"api": "openai", "base_url": "https://…/v1", "key_env": ["MY_KEY"]}}`.
 
-Environment: `H_PAUSE` (seconds to show the decision, default 1.5), `H_FIRST_MESSAGE_FLAG` (if your Hermes takes a first message as a flag, pass it here to skip the paste step), `H_LOG_TASKS=0`, `H_DEBUG=1`.
+- `reasoning` (optional, per tier): `none` … `ultra`, passed to `hermes chat --reasoning`. For example `low` on the quick tier and `high` on the strong one. Higher reasoning means more thinking tokens and more cost.
+
+Environment: `H_PAUSE` (seconds to show the decision, default 1.5), `H_FIRST_MESSAGE_FLAG` (default `-q`; set `clipboard` on Hermes builds older than v0.23 without `-q`), `H_LOG_TASKS=0`, `H_DEBUG=1`.
 
 ### Measure before you trust it
 
@@ -125,14 +127,14 @@ h --score routes.csv
 ## Limits, stated plainly
 
 - **Cost figures are Hermes' estimates** from its own price table, not your provider's bill. Check them against your provider's console.
-- **One paste step remains.** h copies the task, and you paste it as the first message. Set `H_FIRST_MESSAGE_FLAG` once you know your Hermes version's flag.
+- **Needs Hermes v0.23+ for one-step launch.** Older builds lack `-q`. Use `H_FIRST_MESSAGE_FLAG=clipboard` and paste instead.
 - **Routing accuracy hasn't been measured on a large task set yet.** Use `--eval` / `--score` and share your numbers.
 - **Provider line-ups change monthly.** Run `h --check` after any provider announcement.
 
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests     # 28 tests, no network needed
+python3 -m unittest discover -s tests     # 32 tests, no network needed
 ```
 
 ---
