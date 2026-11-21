@@ -31,11 +31,9 @@ Also offer the reverse when it fits:
 Examples: Sonnet for routine edits, Haiku for bulk summarising, Batch API (50% off) for non-urgent bulk jobs.
 
 ## Task footer (every task)
-End every task with exactly this block:
-"— Model: <model> · <one-line reason; if a cheaper tier fits this kind of task, say so in the form "next time: h -q" (Haiku), "h -s" (Sonnet) or "h -o" (Opus)>
-— Cost: task ~$X.XX · cycle ~$Y.YY of $200 (est.) · expires <date>"
-
-Always show the task cost. Cycle total (only every 5th task, when a nudge may apply, or when I ask; otherwise write "cycle ~$? (ask)" in its place, keeping the task cost): sum estimated_cost_usd in ~/.hermes/state.db for all sessions since the 10th of the current month (one local sqlite3 query; save the working query to memory the first time). Current cycle expires Dec 13, 2026. After a new grant, I'll update this date, and until then you assume 33 days after the 10th.
+End every task with exactly this line:
+"— Model: <model> · <one-line reason; if a cheaper tier fits this kind of task, say so in the form "next time: h -q" (Haiku), "h -s" (Sonnet) or "h -o" (Opus)>"
+Never state a dollar figure you haven't measured: you can't see this session's real cost. Only when I ask about cost, or when a nudge below may apply, run one local query on ~/.hermes/state.db (sessions.estimated_cost_usd: this session, and the sum since the 10th of the month) and report those numbers as "Hermes estimate". Save the working query to memory the first time. Current cycle expires Dec 13, 2026; I'll update this date after each new grant.
 
 Nudges (add one line under the footer only when one applies):
 - Pace: if (cycle spend ÷ days elapsed) × days in cycle > $200, warn: "On pace to run out ~<date>."

@@ -50,3 +50,5 @@
 - Never print: model_config / prompt_cache_clock (JSON), system_prompt, user_id, chat_id, cwd, git_*, title (opt-in only).
 - `h --sessions` uses an exact whitelist. The first version matched substrings ("id" matched "hidden"), which dumped JSON and a text `cost_*` column, and crashed the total.
 - Finding: each new session writes ~21.7K tokens to the cache before the first answer. On Haiku 5.5, 21,693 × $0.125/M + 4 × $0.10/M + 131 × $0.50/M = $0.0028, matching Hermes' estimate exactly.
+- The SOUL footer's "task ~$X.XX" was the model guessing. On camera it said ~$0.01 when state.db (and the recomputation) said $0.0028. The model can't see its own cost without a tool call. Footer v3 drops unmeasured dollar figures. Cost comes from `h --sessions` or an on-request state.db query.
+- Hermes `/usage` shows tokens but not cost for API-key sessions, and reports "Anthropic account limits are only available for OAuth-backed Claude accounts". That confirms the session uses the API key, not OAuth.

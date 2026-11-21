@@ -20,6 +20,7 @@ Three levels of proof:
 | 9 | Per-task cost lookup raised a trivial answer to **≈ $0.06** | Guide §5, post | Same CSV | **Pending** (Hermes estimate) |
 | 10 | Opus 5.5 = 2× Sonnet 5.5; Haiku 5.5 ≈ 40× cheaper than Opus (≤100K tokens) | README, guide §5, post | [Anthropic pricing page](https://platform.claude.com/docs/en/about-claude/pricing), Nov 2026: $4/$20, $2/$10, $0.10/$0.50 per M tokens | ✓ (re-check on price changes) |
 | 11 | `h` routed a definition to Haiku; cycle ~$0.90 of $200 | README, post | Terminal transcript in the guide; demo recording | ✓ (budget figure = Hermes estimate) |
+| 11b | Hermes is using the API key, not subscription OAuth | Guide, post | Hermes `/usage` in the demo: "Anthropic account limits are only available for OAuth-backed Claude accounts" | ✓ |
 | 12 | `h --check`: key valid, all three models listed by the provider | Guide §7 | Terminal transcript; demo step 1 | ✓ |
 | 13 | Hermes' cost estimate matches published prices | README, post | `h --sessions` shows Hermes' `estimated_cost_usd` next to an independent recomputation (tokens × [published prices](https://platform.claude.com/docs/en/about-claude/pricing)). Three real Haiku sessions on 21 Nov 2026: 4 input + ~130 output + 21,693 cache-write tokens → $0.0028 both ways | ✓ (recomputation, not a bill) |
 | 14 | Starting a fresh Hermes session costs ~$0.003 on Haiku vs ~$0.11 on Opus, before any real work | README, post | The same rows: each new session writes ~21.7K tokens of setup (system prompt, tools, skills, SOUL.md) to the prompt cache. 21,693 × $0.125/M (Haiku 5-min cache write) ≈ $0.0027; × $5/M (Opus) ≈ $0.108 | ✓ derived. Opus figure assumes the same setup size; confirm with one Opus session row |
@@ -37,3 +38,7 @@ h --sessions 30 --csv > ~/.local/share/hermes-budget-router/docs/evidence/sessio
 Then check both screenshots for card numbers, emails and other keys' names, and redact them before committing. The ones in `img/` show how.
 
 **If Console and Hermes disagree:** the Console wins. Update the numbers in the README and post, and note the gap here. It's a finding about Hermes' price table, not a failure.
+
+## Known non-evidence
+
+- **The cost line in Hermes' footer is not evidence.** Earlier versions of `soul/cost-policy.md` had the model print `task ~$X.XX`. It guessed: one demo take showed ~$0.01 against a measured $0.0028. The policy no longer prints unmeasured figures. Don't quote footer dollars anywhere.
