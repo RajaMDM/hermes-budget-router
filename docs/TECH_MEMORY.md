@@ -57,3 +57,5 @@
 - Same question ("12-person team missing deadlines, 30-day plan"): Opus $0.1389, Sonnet $0.0682. Sonnet was ~90% as useful. Opus's edge was judgement (realistic 4–6-week horizon, escalate when the problem is scope/staffing). Rubric v2 moves general-knowledge plans to standard.
 - Model self-assessment is biased downward: Opus → "h -s", Sonnet → "h -q" on the same task. Never tune routing from footers. Use `h --eval` labels.
 - The video still shows the v1 rubric picking Opus for that question. That's accurate for when it was recorded, and the narration says Opus judged a cheaper model enough, which the Sonnet test confirmed.
+- Classifier empty replies: with `max_tokens: 60`, harder prompts returned no text (`Classifier unusable reply: ''`) and fell back to keywords. Raised to 400 in v0.3.3; 3/3 runs then classified correctly. Debug logs `stop_reason` and block types if it recurs.
+- Verified after tuning: the deadlines plan goes to Sonnet (3/3); the warehouse migration with an audit deadline goes to Opus.

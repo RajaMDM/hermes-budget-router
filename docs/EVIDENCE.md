@@ -29,6 +29,7 @@ Three levels of proof:
 | 17 | Opus itself said Sonnet would have been enough ("next time: h -s") | Video, post | Footer line in `docs/demo/video.cast`, shown in the video at the moment it's narrated | ✓ |
 | 18 | The deadlines question on Sonnet cost **$0.0682** (49% of Opus's $0.1389) and was about as useful | Post, README | `h --sessions 2` row fe6104c185 (Sonnet, 1,122 output tokens, 22,780 cache-write tokens; recomputed = estimate). Quality: side-by-side review of both answers. Sonnet's tests and plan were more measurable; Opus was more realistic on timing (4–6 weeks, not 30 days) and on escalating scope/staffing problems; Sonnet contradicted itself once ("no process changes yet", then reorganised into pods) | ✓ cost; quality = one reviewer's judgement |
 | 19 | The models' "next time: cheaper tier" footer is a biased signal | Cost policy, TECH_MEMORY | Opus said "h -s"; Sonnet, on the same question, said "h -q". Each recommended the tier below itself. The policy no longer asks for it | ✓ |
+| 20 | Tuned rubric (v0.3.3) routes the generic deadlines plan to **Sonnet** (3 of 3 runs) and the 40 TB warehouse-migration decision with an audit deadline to **Opus** | README, post | `h -n` transcripts, 21 Nov 2026. Sonnet reasons: "Generic diagnosis and 30-day improvement plan drawn from general management knowledge" (and two near-identical); Opus reason: "High-stakes migration decision hinging on team capacity and audit constraints" | ✓ (two test prompts, not a benchmark) |
 
 ## How to capture the pending items
 
