@@ -79,9 +79,5 @@ The complex one, about fourteen cents.
 Fifty times more, and only when the question deserves it.
 
 21
-00:01:33,534 --> 00:01:37,680
+00:01:33,534 --> 00:01:37,460
 This budget router for Hermes is free and open source on GitHub.
-
-22
-00:01:37,680 --> 00:01:38,846
-trykarkedekho.com.

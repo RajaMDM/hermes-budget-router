@@ -5,4 +5,4 @@ s3|Now a harder one: a team that keeps missing deadlines, and a thirty-day plan 
 s3b|Notice the footer: Opus itself says a cheaper model would have been enough. The agent is honest about cost.
 s4|Here's what each answer actually cost, from the records Hermes keeps. Both figures are recomputed independently from Anthropic's published prices, and they match.
 compare|The simple answer cost about a quarter of a cent. The complex one, about fourteen cents. Fifty times more, and only when the question deserves it.
-end|This budget router for Hermes is free and open source on GitHub. Try karke dekho dot com.
+end|This budget router for Hermes is free and open source on GitHub.
