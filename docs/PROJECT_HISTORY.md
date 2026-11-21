@@ -15,3 +15,7 @@
 **Then we made it economical.** Background housekeeping moved to the cheapest model. Hermes was given a written cost policy: answer directly, ask before expensive work, offer upgrades with a price, report the cost. A small launcher (`h`) now picks the right model for each task before the session starts and keeps an eye on the monthly budget.
 
 **Why publish.** Many Hermes users hit the same error with no clear explanation. This repo is the fix, with evidence, plus the tooling built on top of it.
+
+## 21 Nov 2026 (later): opened up to everyone
+
+The first version only helped Claude Max subscribers. But the underlying lessons apply to anyone running an AI agent: pick the model before the conversation, keep the agent from researching things it already knows, and put limits on background work. So the launcher now works with any provider Hermes supports. Each tier can come from a different company, or run locally on your own computer for free. There are ready-made setups for ChatGPT plans, Grok plans, Gemini's free tier, pay-as-you-go keys and fully local models. The project was renamed **hermes-budget-router** to match.

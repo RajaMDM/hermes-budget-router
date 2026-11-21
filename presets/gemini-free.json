@@ -1,0 +1,28 @@
+{
+  "description": "Google Gemini API free tier: $0, rate-limited, prompts may be used to improve Google's products (UNTESTED)",
+  "budget_usd": null,
+  "cycle_day": 1,
+  "classifier_tier": "q",
+  "tiers": {
+    "q": {
+      "label": "Gemini 3.5 Flash (free)",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash"
+    },
+    "s": {
+      "label": "Gemini 3.5 Flash (free)",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash"
+    },
+    "o": {
+      "label": "Gemini 3.5 Flash (free)",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash"
+    }
+  },
+  "_notes": [
+    "Model IDs from the provider's pricing page as of Nov 2026. Run `h --check` to confirm they exist for your key.",
+    "Only some models are on the free tier, so all tiers use the same one. Routing still logs which tasks needed more power.",
+    "Don't send confidential data: free-tier content can be used to improve Google's products."
+  ]
+}

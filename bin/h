@@ -1,31 +1,27 @@
 #!/usr/bin/env python3
-"""h — budget-aware model router for Hermes Agent sessions on Claude API credits.
+"""h — budget-aware model router for Hermes Agent, across any provider.
 
-Picks the cheapest Claude model that fits a task, using a tiny Haiku call (falls back
-to keyword rules offline), checks this cycle's spend from Hermes' own state.db, logs
-every decision, then launches `hermes chat` with that model.
+Picks the cheapest model tier that fits a task (one tiny classifier call, keyword
+fallback offline), checks this cycle's spend from Hermes' own state.db, logs the
+decision, then launches `hermes chat` with that provider and model. Tiers can mix
+providers: e.g. local Ollama for quick tasks, Gemini for routine work, Claude for hard ones.
 
 Usage:
   h <task>              route the task, then launch Hermes
   h                     prompt for the task
-  h -q|-s|-o <task>     force Haiku / Sonnet / Opus
-  h -n <task>           dry run: show the routing decision, don't launch
-  h --budget            show this cycle's estimated spend and pace
+  h -q|-s|-o <task>     force the quick / standard / strong tier
+  h -n <task>           dry run: show the decision, don't launch
+  h --init <preset>     write ~/.hermes/h.json from a preset (see --presets)
+  h --presets           list bundled presets
+  h --check             verify keys and that each tier's model exists at its provider
+  h --budget            this cycle's estimated spend and pace
   h --stats             summarise past routing decisions
-  h --eval FILE         route every line of FILE (dry run), print CSV for labelling
-  h --score FILE.csv    accuracy of a labelled eval CSV (fill the 'expected' column)
-  h --help              this text
+  h --eval FILE         route each line of FILE (dry run), print CSV for labelling
+  h --score FILE.csv    accuracy of a labelled eval CSV
+  h --version | --help
 
-Environment (all optional):
-  H_MODEL_Q / H_MODEL_S / H_MODEL_O   model IDs per tier
-  H_CLASSIFIER_MODEL                  model used for routing (default: Haiku tier)
-  H_BUDGET_USD        monthly credit (default 200)
-  H_CYCLE_DAY         day of month the credit is granted (default 10)
-  H_PAUSE             seconds to show the decision before launching (default 1.5)
-  H_FIRST_MESSAGE_FLAG  Hermes flag that takes an initial message; if set, the task is
-                        passed directly instead of via the clipboard
-  H_LOG_TASKS=0       don't store task previews in the routing log
-  H_DEBUG=1           verbose diagnostics
+Config: ~/.hermes/h.json (or $H_CONFIG). Without one, the built-in default is the
+"claude-credits" preset. Env: H_PAUSE, H_FIRST_MESSAGE_FLAG, H_LOG_TASKS=0, H_DEBUG=1.
 """
 from __future__ import annotations
 
@@ -42,24 +38,47 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 ENV_FILE = HERMES_HOME / ".env"
 STATE_DB = HERMES_HOME / "state.db"
 LOG_FILE = HERMES_HOME / "h-routing.jsonl"
-API_URL = "https://api.anthropic.com/v1/messages"
+CONFIG_FILE = Path(os.environ.get("H_CONFIG", HERMES_HOME / "h.json"))
+PRESET_DIRS = [Path(__file__).resolve().parent.parent / "presets",
+               Path.home() / ".local" / "share" / "h" / "presets"]
+TIERS = ("q", "s", "o")
+TIER_NAMES = {"q": "quick", "s": "standard", "o": "strong"}
 
-MODELS: dict[str, str] = {
-    "q": os.environ.get("H_MODEL_Q", "claude-haiku-5-5"),
-    "s": os.environ.get("H_MODEL_S", "claude-sonnet-5-5"),
-    "o": os.environ.get("H_MODEL_O", "claude-opus-5-5"),
+# How h talks to each Hermes provider id for classification and --check.
+# "api": "anthropic" = Messages API; "openai" = OpenAI-compatible /chat/completions.
+# Providers missing here (subscription sign-ins like openai-codex, xai-oauth, copilot)
+# can still be launched; they just can't run the classifier.
+ENDPOINTS: dict[str, dict] = {
+    "anthropic":  {"api": "anthropic", "base_url": "https://api.anthropic.com/v1", "key_env": ["ANTHROPIC_API_KEY"]},
+    "openai-api": {"api": "openai", "base_url": "https://api.openai.com/v1", "key_env": ["OPENAI_API_KEY"]},
+    "gemini":     {"api": "openai", "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+                   "key_env": ["GEMINI_API_KEY", "GOOGLE_API_KEY"]},
+    "xai":        {"api": "openai", "base_url": "https://api.x.ai/v1", "key_env": ["XAI_API_KEY"]},
+    "openrouter": {"api": "openai", "base_url": "https://openrouter.ai/api/v1", "key_env": ["OPENROUTER_API_KEY"]},
+    "deepseek":   {"api": "openai", "base_url": "https://api.deepseek.com/v1", "key_env": ["DEEPSEEK_API_KEY"]},
+    "custom":     {"api": "openai", "base_url": "http://localhost:11434/v1", "key_env": []},
 }
-LABELS: dict[str, str] = {"q": "Haiku", "s": "Sonnet", "o": "Opus"}
-CLASSIFIER_MODEL = os.environ.get("H_CLASSIFIER_MODEL", MODELS["q"])
+
+DEFAULT_CONFIG: dict = {
+    "name": "claude-credits (built-in default)",
+    "budget_usd": 200,
+    "cycle_day": 10,
+    "classifier_tier": "q",
+    "tiers": {
+        "q": {"label": "Haiku", "provider": "anthropic", "model": "claude-haiku-5-5"},
+        "s": {"label": "Sonnet", "provider": "anthropic", "model": "claude-sonnet-5-5"},
+        "o": {"label": "Opus", "provider": "anthropic", "model": "claude-opus-5-5"},
+    },
+}
 
 HEAVY = re.compile(
     r"\b(architect\w*|design|strateg\w*|review|debug|refactor|deck|proposal|policy|"
@@ -67,27 +86,197 @@ HEAVY = re.compile(
     re.IGNORECASE,
 )
 
-SYSTEM_PROMPT = """You route tasks to the cheapest Claude model that will do them well.
-q = Haiku: definitions, quick facts, lookups, short summaries, simple rewrites, formatting.
-s = Sonnet: routine coding and edits, drafts, emails, multi-step but well-defined work.
-o = Opus: architecture and design trade-offs, hard debugging, long builds, stakeholder or public documents, ambiguous problems.
+SYSTEM_PROMPT = """You route tasks to the cheapest AI model tier that will do them well.
+q = quick: definitions, quick facts, lookups, short summaries, simple rewrites, formatting.
+s = standard: routine coding and edits, drafts, emails, multi-step but well-defined work.
+o = strong: architecture and design trade-offs, hard debugging, long builds, stakeholder or public documents, ambiguous problems.
 When unsure between two tiers, pick the cheaper one.{budget_hint}
 Reply with JSON only: {{"tier":"q|s|o","reason":"<max 12 words>"}}"""
 
 BUDGET_HINTS: dict[str, str] = {
     "tight": "\nBudget is on pace to run out early: only choose o when the task clearly needs it.",
     "underuse": "\nUnused credit expires soon: when torn between two tiers, choose the stronger one.",
-    "normal": "",
-    "unknown": "",
 }
 
 log = logging.getLogger("h")
 
 
-# ---------------------------------------------------------------- data types
+# ================================================================ config
+@dataclass
+class Tier:
+    key: str
+    provider: str
+    model: str
+    label: str = ""
+
+    @property
+    def name(self) -> str:
+        return self.label or f"{TIER_NAMES[self.key]} ({self.provider})"
+
+
+@dataclass
+class Config:
+    name: str
+    tiers: dict[str, Tier]
+    budget_usd: float | None = 200
+    cycle_day: int = 10
+    classifier_tier: str = "q"
+    endpoints: dict[str, dict] = field(default_factory=dict)
+
+    def endpoint(self, provider: str) -> dict | None:
+        """User-defined endpoint overrides the built-in table."""
+        return self.endpoints.get(provider) or ENDPOINTS.get(provider)
+
+
+def parse_config(raw: dict) -> Config:
+    """Validate a config dict and build a Config. Raises ValueError on bad input."""
+    tiers_raw = raw.get("tiers") or {}
+    missing = [t for t in TIERS if t not in tiers_raw]
+    if missing:
+        raise ValueError(f"config is missing tiers: {', '.join(missing)}")
+    tiers: dict[str, Tier] = {}
+    for key in TIERS:
+        t = tiers_raw[key]
+        if not t.get("provider") or not t.get("model"):
+            raise ValueError(f"tier '{key}' needs both 'provider' and 'model'")
+        if "REPLACE" in str(t["model"]).upper():
+            raise ValueError(f"tier '{key}' still has a placeholder model: {t['model']}")
+        tiers[key] = Tier(key, t["provider"], t["model"], t.get("label", ""))
+    classifier = raw.get("classifier_tier", "q")
+    if classifier not in TIERS:
+        raise ValueError("classifier_tier must be q, s or o")
+    budget = raw.get("budget_usd", 200)
+    return Config(
+        name=raw.get("name", "custom"),
+        tiers=tiers,
+        budget_usd=float(budget) if budget not in (None, 0, "") else None,
+        cycle_day=int(raw.get("cycle_day", 10)),
+        classifier_tier=classifier,
+        endpoints=raw.get("endpoints", {}),
+    )
+
+
+def load_config(path: Path = CONFIG_FILE) -> Config:
+    """Load ~/.hermes/h.json, or the built-in Claude default if it doesn't exist."""
+    if not path.exists():
+        return parse_config(DEFAULT_CONFIG)
+    try:
+        return parse_config(json.loads(path.read_text()))
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise SystemExit(f"h: bad config {path}: {exc}")
+
+
+def find_presets() -> dict[str, Path]:
+    presets: dict[str, Path] = {}
+    for d in PRESET_DIRS:
+        if d.is_dir():
+            for p in sorted(d.glob("*.json")):
+                presets.setdefault(p.stem, p)
+    return presets
+
+
+# ================================================================ keys & HTTP
+def read_env_file(path: Path = ENV_FILE) -> dict[str, str]:
+    """Parse KEY=VALUE lines from Hermes' .env (ignores comments and blanks)."""
+    values: dict[str, str] = {}
+    try:
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            v = v.strip().strip('"').strip("'")
+            if v:
+                values[k.strip()] = v
+    except OSError as exc:
+        log.debug("Could not read %s: %s", path, exc)
+    return values
+
+
+def get_key(endpoint: dict, env_file: dict[str, str] | None = None) -> str | None:
+    """Return the first available key for an endpoint from env or .env. '' if none needed."""
+    names = endpoint.get("key_env", [])
+    if isinstance(names, str):
+        names = [names]
+    if not names:
+        return ""
+    env_file = env_file if env_file is not None else read_env_file()
+    for n in names:
+        if os.environ.get(n):
+            return os.environ[n]
+        if env_file.get(n):
+            return env_file[n]
+    return None
+
+
+def _http_json(url: str, headers: dict, body: dict | None = None, timeout: int = 15) -> dict:
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method="POST" if body is not None else "GET",
+                                 headers={"content-type": "application/json", **headers})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.load(resp)
+
+
+def _auth_variants(endpoint: dict, key: str) -> list[dict]:
+    if endpoint["api"] == "anthropic":
+        base = {"anthropic-version": "2023-06-01"}
+        # Hermes labels newer sk-ant-usr keys as OAuth; try both header styles.
+        return [{**base, "x-api-key": key}, {**base, "authorization": f"Bearer {key}"}]
+    return [{"authorization": f"Bearer {key}"}] if key else [{}]
+
+
+def chat(endpoint: dict, key: str, model: str, system: str, user: str, max_tokens: int = 60) -> str | None:
+    """Single-turn completion via the endpoint's API style. Returns text or None."""
+    base = endpoint["base_url"].rstrip("/")
+    for headers in _auth_variants(endpoint, key):
+        try:
+            if endpoint["api"] == "anthropic":
+                data = _http_json(f"{base}/messages", headers, {
+                    "model": model, "max_tokens": max_tokens, "system": system,
+                    "messages": [{"role": "user", "content": user}]})
+                return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+            data = _http_json(f"{base}/chat/completions", headers, {
+                "model": model, "max_tokens": max_tokens,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]})
+            return data["choices"][0]["message"]["content"] or ""
+        except urllib.error.HTTPError as exc:
+            log.debug("HTTP %s from %s (%s)", exc.code, base, ",".join(headers))
+            if exc.code in (401, 403) and endpoint["api"] == "anthropic":
+                continue
+            return None
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, KeyError, IndexError) as exc:
+            log.debug("Request to %s failed: %s", base, exc)
+            return None
+    return None
+
+
+def list_models(endpoint: dict, key: str) -> set[str] | None:
+    """Model IDs the provider reports via GET /models. None if it can't be read."""
+    base = endpoint["base_url"].rstrip("/")
+    for headers in _auth_variants(endpoint, key):
+        try:
+            data = _http_json(f"{base}/models", headers)
+        except urllib.error.HTTPError as exc:
+            log.debug("GET /models HTTP %s from %s", exc.code, base)
+            if exc.code in (401, 403) and endpoint["api"] == "anthropic":
+                continue
+            return None
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            log.debug("GET /models failed: %s", exc)
+            return None
+        ids = set()
+        for m in data.get("data", []) or data.get("models", []):
+            mid = str(m.get("id") or m.get("name") or "")
+            ids.add(mid)
+            ids.add(mid.removeprefix("models/"))
+        return ids
+    return None
+
+
+# ================================================================ budget
 @dataclass
 class Budget:
-    """Estimated spend for the current credit cycle, from Hermes' own cost estimates."""
+    """Estimated spend for the current cycle, from Hermes' own cost estimates."""
     spent: float
     budget: float
     cycle_start: dt.date
@@ -122,27 +311,14 @@ class Budget:
         pct = 100 * self.spent / self.budget if self.budget else 0
         msg = (f"cycle ~${self.spent:.2f} of ${self.budget:.0f} ({pct:.0f}%) · "
                f"{self.days_left}d left · pace ~${self.projected:.0f}")
-        return msg + {"tight": " · ⚠ on pace to run out",
-                      "underuse": " · unused credit expiring",
+        return msg + {"tight": " · ⚠ on pace to run out", "underuse": " · unused budget expiring",
                       "normal": ""}[self.status]
 
 
-@dataclass
-class Decision:
-    tier: str
-    reason: str
-    source: str  # classifier | heuristic | forced
-
-    @property
-    def model(self) -> str:
-        return MODELS[self.tier]
-
-
-# ---------------------------------------------------------------- budget
 def cycle_bounds(today: dt.date, cycle_day: int) -> tuple[dt.date, dt.date]:
-    """Return (start, end) of the credit cycle containing `today`, anchored on `cycle_day`."""
+    """Return (start, end) of the cycle containing `today`, anchored on `cycle_day`."""
     def anchor(year: int, month: int) -> dt.date:
-        for d in (cycle_day, 28):  # clamp for short months
+        for d in (cycle_day, 30, 29, 28):
             try:
                 return dt.date(year, month, d)
             except ValueError:
@@ -151,26 +327,19 @@ def cycle_bounds(today: dt.date, cycle_day: int) -> tuple[dt.date, dt.date]:
 
     this = anchor(today.year, today.month)
     if today >= this:
-        start = this
-        y, m = (today.year + (today.month == 12), today.month % 12 + 1)
-        end = anchor(y, m)
-    else:
-        end = this
-        y, m = (today.year - (today.month == 1), (today.month - 2) % 12 + 1)
-        start = anchor(y, m)
-    return start, end
+        start, (y, m) = this, (today.year + (today.month == 12), today.month % 12 + 1)
+        return start, anchor(y, m)
+    y, m = today.year - (today.month == 1), (today.month - 2) % 12 + 1
+    return anchor(y, m), this
 
 
 def _to_date(value: object) -> dt.date | None:
-    """Parse an epoch (s or ms) or ISO-ish timestamp into a date."""
     if value is None:
         return None
     try:
         num = float(value)  # type: ignore[arg-type]
-        if num > 1e12:
-            num /= 1000
-        return dt.datetime.fromtimestamp(num).date()
-    except (TypeError, ValueError):
+        return dt.datetime.fromtimestamp(num / 1000 if num > 1e12 else num).date()
+    except (TypeError, ValueError, OverflowError, OSError):
         pass
     try:
         return dt.datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
@@ -178,24 +347,23 @@ def _to_date(value: object) -> dt.date | None:
         return None
 
 
-def read_budget(db: Path = STATE_DB, today: dt.date | None = None) -> Budget | None:
+def read_budget(cfg: Config, db: Path = STATE_DB, today: dt.date | None = None) -> Budget | None:
     """Sum Hermes' estimated_cost_usd for sessions in the current cycle. None if unavailable."""
+    if not cfg.budget_usd:
+        return None
     today = today or dt.date.today()
-    start, end = cycle_bounds(today, int(os.environ.get("H_CYCLE_DAY", "10")))
-    budget = float(os.environ.get("H_BUDGET_USD", "200"))
+    start, end = cycle_bounds(today, cfg.cycle_day)
     if not db.exists():
         log.debug("No state.db at %s", db)
         return None
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
         cols = [r[1] for r in con.execute("PRAGMA table_info(sessions)")]
-        if "estimated_cost_usd" not in cols:
-            log.debug("sessions table has no estimated_cost_usd; columns: %s", cols)
-            return None
         time_col = next((c for c in ("started_at", "created_at", "start_time", "updated_at", "timestamp")
                          if c in cols), None)
-        if time_col is None:
-            log.debug("No timestamp column found in sessions: %s", cols)
+        if "estimated_cost_usd" not in cols or time_col is None:
+            log.debug("Unexpected sessions schema: %s", cols)
+            con.close()
             return None
         rows = con.execute(f"SELECT {time_col}, estimated_cost_usd FROM sessions").fetchall()
         con.close()
@@ -203,27 +371,20 @@ def read_budget(db: Path = STATE_DB, today: dt.date | None = None) -> Budget | N
         log.debug("state.db read failed: %s", exc)
         return None
     spent = sum(float(c or 0) for t, c in rows if (d := _to_date(t)) and start <= d <= today)
-    return Budget(spent=spent, budget=budget, cycle_start=start, cycle_end=end, today=today)
+    return Budget(spent, cfg.budget_usd, start, end, today)
 
 
-# ---------------------------------------------------------------- routing
-def load_api_key() -> str | None:
-    """Return ANTHROPIC_API_KEY from the environment, else from Hermes' .env."""
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return os.environ["ANTHROPIC_API_KEY"]
-    try:
-        for line in ENV_FILE.read_text().splitlines():
-            if line.startswith("ANTHROPIC_API_KEY="):
-                value = line.split("=", 1)[1].strip().strip('"').strip("'")
-                return value or None
-    except OSError as exc:
-        log.debug("Could not read %s: %s", ENV_FILE, exc)
-    return None
+# ================================================================ routing
+@dataclass
+class Decision:
+    tier: str
+    reason: str
+    source: str  # classifier | heuristic | forced
 
 
 def parse_reply(text: str) -> tuple[str, str] | None:
-    """Extract (tier, reason) from the classifier's JSON reply."""
-    match = re.search(r"\{.*\}", text, re.DOTALL)
+    """Extract (tier, reason) from a classifier reply containing JSON."""
+    match = re.search(r"\{.*\}", text or "", re.DOTALL)
     if not match:
         return None
     try:
@@ -231,39 +392,7 @@ def parse_reply(text: str) -> tuple[str, str] | None:
     except json.JSONDecodeError:
         return None
     tier = str(parsed.get("tier", "")).strip().lower()
-    return (tier, str(parsed.get("reason", "")).strip()) if tier in MODELS else None
-
-
-def classify(task: str, key: str, budget_status: str = "unknown") -> tuple[str, str] | None:
-    """Ask the classifier model for a tier. Tries x-api-key auth, then Bearer."""
-    body = json.dumps({
-        "model": CLASSIFIER_MODEL,
-        "max_tokens": 60,
-        "system": SYSTEM_PROMPT.format(budget_hint=BUDGET_HINTS.get(budget_status, "")),
-        "messages": [{"role": "user", "content": task[:4000]}],
-    }).encode()
-    for auth in ({"x-api-key": key}, {"authorization": f"Bearer {key}"}):
-        req = urllib.request.Request(
-            API_URL, data=body, method="POST",
-            headers={"content-type": "application/json", "anthropic-version": "2023-06-01", **auth},
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.load(resp)
-        except urllib.error.HTTPError as exc:
-            log.debug("Classifier HTTP %s using %s", exc.code, next(iter(auth)))
-            if exc.code in (401, 403):
-                continue
-            return None
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            log.debug("Classifier failed: %s", exc)
-            return None
-        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
-        result = parse_reply(text)
-        if result is None:
-            log.debug("Unparseable classifier reply: %r", text)
-        return result
-    return None
+    return (tier, str(parsed.get("reason", "")).strip()) if tier in TIERS else None
 
 
 def heuristic(task: str) -> tuple[str, str]:
@@ -275,30 +404,76 @@ def heuristic(task: str) -> tuple[str, str]:
     return "s", "default"
 
 
-def route(task: str, forced: str | None = None, budget: Budget | None = None,
-          use_api: bool = True) -> Decision:
+def classifier_target(cfg: Config) -> tuple[Tier, dict, str] | None:
+    """Pick the tier that runs classification: the configured one, else any tier with a usable API."""
+    env_file = read_env_file()
+    order = [cfg.classifier_tier] + [t for t in TIERS if t != cfg.classifier_tier]
+    for key in order:
+        tier = cfg.tiers[key]
+        ep = cfg.endpoint(tier.provider)
+        if not ep:
+            continue
+        k = get_key(ep, env_file)
+        if k is not None:
+            return tier, ep, k
+    return None
+
+
+def route(task: str, cfg: Config, forced: str | None = None, budget: Budget | None = None) -> Decision:
     """Decide the tier for a task."""
     if forced:
         return Decision(forced, "forced", "forced")
-    key = load_api_key() if use_api else None
-    status = budget.status if budget else "unknown"
-    result = classify(task, key, status) if key else None
-    if result:
-        return Decision(result[0], result[1], "classifier")
-    tier, reason = heuristic(task)
-    return Decision(tier, reason, "heuristic")
+    target = classifier_target(cfg)
+    if target:
+        tier, ep, key = target
+        hint = BUDGET_HINTS.get(budget.status, "") if budget else ""
+        reply = chat(ep, key, tier.model, SYSTEM_PROMPT.format(budget_hint=hint), task[:4000])
+        result = parse_reply(reply or "")
+        if result:
+            return Decision(result[0], result[1], "classifier")
+        log.debug("Classifier unusable reply: %r", reply)
+    tier_key, reason = heuristic(task)
+    return Decision(tier_key, reason, "heuristic")
 
 
-# ---------------------------------------------------------------- logging & stats
-def log_decision(task: str, decision: Decision, budget: Budget | None, path: Path = LOG_FILE) -> None:
-    """Append one routing decision to the JSONL log (best effort)."""
-    entry = {
-        "ts": dt.datetime.now().isoformat(timespec="seconds"),
-        **asdict(decision),
-        "model": decision.model,
-        "budget_status": budget.status if budget else "unknown",
-        "words": len(task.split()),
-    }
+# ================================================================ check
+def check(cfg: Config) -> list[str]:
+    """Human-readable health report for each tier."""
+    env_file = read_env_file()
+    lines = [f"Config: {cfg.name}" + ("" if CONFIG_FILE.exists() else "  (built-in default; run h --init <preset>)")]
+    for key in TIERS:
+        t = cfg.tiers[key]
+        head = f"  {key}  {t.name:<22} {t.provider}/{t.model}"
+        ep = cfg.endpoint(t.provider)
+        if not ep:
+            lines.append(f"{head}\n      ? launch-only provider (subscription sign-in); h can't verify it, "
+                         "check `hermes auth status " + t.provider + "`")
+            continue
+        k = get_key(ep, env_file)
+        if k is None:
+            lines.append(f"{head}\n      ✗ no key: set {' or '.join(ep['key_env'])} in ~/.hermes/.env")
+            continue
+        models = list_models(ep, k)
+        if models is None:
+            lines.append(f"{head}\n      ? key found, but couldn't list models (offline or endpoint differs)")
+        elif t.model in models:
+            lines.append(f"{head}\n      ✓ key found, model available")
+        else:
+            close = sorted(m for m in models if t.model.split("-")[0] in m)[:6]
+            lines.append(f"{head}\n      ✗ model not offered by provider" +
+                         (f"; similar: {', '.join(close)}" if close else ""))
+    ct = classifier_target(cfg)
+    lines.append(f"Classifier: {ct[0].provider}/{ct[0].model}" if ct else
+                 "Classifier: none available; keyword heuristic only")
+    return lines
+
+
+# ================================================================ logging, stats, eval
+def log_decision(task: str, d: Decision, cfg: Config, budget: Budget | None, path: Path = LOG_FILE) -> None:
+    t = cfg.tiers[d.tier]
+    entry = {"ts": dt.datetime.now().isoformat(timespec="seconds"), **asdict(d),
+             "provider": t.provider, "model": t.model,
+             "budget_status": budget.status if budget else "unknown", "words": len(task.split())}
     if os.environ.get("H_LOG_TASKS", "1") != "0":
         entry["task"] = task[:80]
     try:
@@ -310,12 +485,12 @@ def log_decision(task: str, decision: Decision, budget: Budget | None, path: Pat
 
 
 def stats(path: Path = LOG_FILE, days: int = 30) -> str:
-    """Summarise routing decisions from the last `days` days."""
     if not path.exists():
         return "No routing decisions logged yet."
     cutoff = dt.datetime.now() - dt.timedelta(days=days)
     tiers: dict[str, int] = {}
     sources: dict[str, int] = {}
+    models: dict[str, int] = {}
     total = 0
     for line in path.read_text().splitlines():
         try:
@@ -327,34 +502,33 @@ def stats(path: Path = LOG_FILE, days: int = 30) -> str:
         total += 1
         tiers[e["tier"]] = tiers.get(e["tier"], 0) + 1
         sources[e["source"]] = sources.get(e["source"], 0) + 1
+        m = f"{e.get('provider', '?')}/{e.get('model', '?')}"
+        models[m] = models.get(m, 0) + 1
     if not total:
         return f"No routing decisions in the last {days} days."
     out = [f"Last {days} days: {total} sessions routed"]
-    for t in ("q", "s", "o"):
+    for t in TIERS:
         n = tiers.get(t, 0)
-        out.append(f"  {LABELS[t]:<7}{n:>4}  {'█' * round(20 * n / total)}")
+        out.append(f"  {TIER_NAMES[t]:<9}{n:>4}  {'█' * round(20 * n / total)}")
+    out.append("  models:  " + ", ".join(f"{k} {v}" for k, v in sorted(models.items(), key=lambda x: -x[1])))
     out.append("  sources: " + ", ".join(f"{k} {v}" for k, v in sorted(sources.items())))
     if sources.get("heuristic", 0) > 0.2 * total:
-        out.append("  ⚠ many heuristic fallbacks: classifier calls are failing (try H_DEBUG=1 h -n test)")
+        out.append("  ⚠ many heuristic fallbacks: classifier calls are failing (run h --check)")
     return "\n".join(out)
 
 
-# ---------------------------------------------------------------- eval
-def run_eval(task_file: Path, out=sys.stdout) -> None:
-    """Route each non-empty line of task_file (dry run) and write CSV for manual labelling."""
-    budget = read_budget()
+def run_eval(cfg: Config, task_file: Path, out=sys.stdout) -> None:
+    budget = read_budget(cfg)
     writer = csv.writer(out)
     writer.writerow(["task", "tier", "reason", "source", "expected"])
     for line in task_file.read_text().splitlines():
         task = line.strip()
-        if not task or task.startswith("#"):
-            continue
-        d = route(task, budget=budget)
-        writer.writerow([task, d.tier, d.reason, d.source, ""])
+        if task and not task.startswith("#"):
+            d = route(task, cfg, budget=budget)
+            writer.writerow([task, d.tier, d.reason, d.source, ""])
 
 
 def score(csv_file: Path) -> str:
-    """Compare routed tier against the hand-filled 'expected' column."""
     rows = [r for r in csv.DictReader(csv_file.open()) if r.get("expected", "").strip()]
     if not rows:
         return "No labelled rows: fill the 'expected' column with q, s or o."
@@ -366,9 +540,8 @@ def score(csv_file: Path) -> str:
             f"{under} under-routed (quality risk), {over} over-routed (cost waste)")
 
 
-# ---------------------------------------------------------------- launch
+# ================================================================ launch
 def copy_to_clipboard(text: str) -> bool:
-    """Copy text to the clipboard on macOS (pbcopy) or Linux (wl-copy / xclip)."""
     for cmd in (["pbcopy"], ["wl-copy"], ["xclip", "-selection", "clipboard"]):
         if shutil.which(cmd[0]):
             try:
@@ -379,12 +552,11 @@ def copy_to_clipboard(text: str) -> bool:
     return False
 
 
-def launch(task: str, decision: Decision) -> int:
-    """Replace this process with `hermes chat` on the chosen model."""
+def launch(task: str, tier: Tier) -> int:
     if shutil.which("hermes") is None:
         print("h: 'hermes' not found on PATH", file=sys.stderr)
         return 1
-    args = ["hermes", "chat", "--provider", "anthropic", "--model", decision.model]
+    args = ["hermes", "chat", "--provider", tier.provider, "--model", tier.model]
     flag = os.environ.get("H_FIRST_MESSAGE_FLAG", "").strip()
     if flag:
         args += [flag, task]
@@ -398,37 +570,65 @@ def launch(task: str, decision: Decision) -> int:
     return 0  # unreachable
 
 
+def init(preset: str | None) -> int:
+    presets = find_presets()
+    if not preset or preset not in presets:
+        print("Presets: " + (", ".join(presets) or "none found next to h"), file=sys.stderr)
+        print("Usage: h --init <preset>", file=sys.stderr)
+        return 2
+    if CONFIG_FILE.exists():
+        backup = CONFIG_FILE.with_suffix(".json.bak")
+        shutil.copy2(CONFIG_FILE, backup)
+        print(f"Backed up existing config to {backup}")
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(presets[preset], CONFIG_FILE)
+    print(f"Wrote {CONFIG_FILE} from preset '{preset}'. Next: edit any REPLACE_ placeholders, then run h --check")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     logging.basicConfig(level=logging.DEBUG if os.environ.get("H_DEBUG") else logging.WARNING,
                         format="h: %(message)s")
-    if argv and argv[0] in ("-h", "--help"):
+    cmd = argv[0] if argv else ""
+    if cmd in ("-h", "--help"):
         print(__doc__)
         return 0
-    if argv and argv[0] == "--version":
+    if cmd == "--version":
         print(f"h {__version__}")
         return 0
-    if argv and argv[0] == "--stats":
+    if cmd == "--presets":
+        for name, path in find_presets().items():
+            desc = json.loads(path.read_text()).get("description", "")
+            print(f"  {name:<16} {desc}")
+        return 0
+    if cmd == "--init":
+        return init(argv[1] if len(argv) > 1 else None)
+    if cmd == "--stats":
         print(stats())
         return 0
-    if argv and argv[0] == "--budget":
-        b = read_budget()
-        print(b.line() if b else "Budget unavailable (no readable ~/.hermes/state.db). H_DEBUG=1 for details.")
+
+    cfg = load_config()
+    if cmd == "--check":
+        print("\n".join(check(cfg)))
         return 0
-    if argv and argv[0] in ("--eval", "--score"):
+    if cmd == "--budget":
+        b = read_budget(cfg)
+        print(b.line() if b else "Budget unavailable (no budget_usd set, or no readable state.db). H_DEBUG=1 for details.")
+        return 0
+    if cmd in ("--eval", "--score"):
         if len(argv) < 2:
-            print(f"h: {argv[0]} needs a file", file=sys.stderr)
+            print(f"h: {cmd} needs a file", file=sys.stderr)
             return 2
-        if argv[0] == "--eval":
-            run_eval(Path(argv[1]))
+        if cmd == "--eval":
+            run_eval(cfg, Path(argv[1]))
         else:
             print(score(Path(argv[1])))
         return 0
 
-    dry_run = bool(argv) and argv[0] == "-n"
+    dry_run = cmd == "-n"
     if dry_run:
         argv = argv[1:]
     forced = argv.pop(0)[1] if argv and argv[0] in ("-q", "-s", "-o") else None
-
     task = " ".join(argv).strip()
     if not task:
         try:
@@ -439,16 +639,17 @@ def main(argv: list[str]) -> int:
         print("h: no task given", file=sys.stderr)
         return 1
 
-    budget = read_budget()
-    decision = route(task, forced, budget)
-    tag = "" if decision.source == "classifier" else f" [{decision.source}]"
-    print(f"→ {LABELS[decision.tier]} ({decision.model}): {decision.reason}{tag}")
+    budget = read_budget(cfg)
+    d = route(task, cfg, forced, budget)
+    tier = cfg.tiers[d.tier]
+    tag = "" if d.source == "classifier" else f" [{d.source}]"
+    print(f"→ {tier.name} ({tier.provider}/{tier.model}): {d.reason}{tag}")
     if budget:
         print(f"  {budget.line()}")
     if dry_run:
         return 0
-    log_decision(task, decision, budget)
-    return launch(task, decision)
+    log_decision(task, d, cfg, budget)
+    return launch(task, tier)
 
 
 if __name__ == "__main__":

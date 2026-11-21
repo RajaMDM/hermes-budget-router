@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0, 21 Nov 2026
+- **Any provider:** each tier is a `(provider, model)` pair in `~/.hermes/h.json`. Classifier adapters for the Anthropic Messages API and any OpenAI-compatible API (OpenAI, Gemini, xAI, OpenRouter, DeepSeek, local Ollama). Subscription sign-ins (ChatGPT, SuperGrok, Copilot) are supported launch-only.
+- **10 presets:** claude-credits (tested), claude-paygo, openai-api, gemini-api, gemini-free, xai, openrouter, local-ollama, mixed-budget, chatgpt-plan.
+- **`h --init` / `--presets` / `--check`.** `--check` verifies each key and asks the provider whether the model ID exists, because model line-ups change monthly.
+- **Docs restructured:** overview README, Claude guide, and an "other setups" guide for Pro/Free/ChatGPT/Grok/free/local users. Repo renamed from hermes-claude-credits to hermes-budget-router.
+- `aux-to-haiku.sh` → `aux-to-cheap.sh [provider] [model]`.
+- 28 unit tests, including HTTP adapters with mocks.
+  *Impact:* useful to anyone running Hermes, not only Claude Max subscribers. Zero-budget and local paths are documented.
+
 ## 0.2.0, 21 Nov 2026
 - **Launcher `h`:** budget-aware routing (reads cycle spend from `state.db` and tells the classifier when budget is tight or credit is about to expire). Routing log and `--stats`. `--budget`. Dry run `-n`. `--eval`/`--score` for measuring routing accuracy. Model IDs, budget and cycle day configurable via env. Linux clipboard support. `H_FIRST_MESSAGE_FLAG` to skip the paste step. Decision held on screen for `H_PAUSE` seconds. 20 unit tests.
   *Impact:* routing can be measured and tuned, and adapts to remaining budget.

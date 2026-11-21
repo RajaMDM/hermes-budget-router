@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import sqlite3
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,135 +17,214 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader("h", str(ROOT / "bin" / "h"))
 spec = importlib.util.spec_from_loader("h", loader)
 h = importlib.util.module_from_spec(spec)
-import sys; sys.modules["h"] = h
+sys.modules["h"] = h
 loader.exec_module(h)
 
+CFG = h.parse_config(h.DEFAULT_CONFIG)
 
-class TestHeuristic(unittest.TestCase):
-    def test_short_question_is_haiku(self):
+
+def tmpdir() -> Path:
+    return Path(tempfile.mkdtemp())
+
+
+class TestConfig(unittest.TestCase):
+    def test_default_is_claude(self):
+        self.assertEqual(CFG.tiers["o"].provider, "anthropic")
+
+    def test_all_presets_are_valid_json_with_three_tiers(self):
+        for p in (ROOT / "presets").glob("*.json"):
+            raw = json.loads(p.read_text())
+            self.assertEqual(set(raw["tiers"]), {"q", "s", "o"}, p.name)
+            self.assertIn("description", raw, p.name)
+
+    def test_presets_without_placeholders_parse(self):
+        for p in (ROOT / "presets").glob("*.json"):
+            if "REPLACE" not in p.read_text():
+                h.parse_config(json.loads(p.read_text()))
+
+    def test_placeholder_rejected(self):
+        raw = json.loads((ROOT / "presets" / "openrouter.json").read_text())
+        with self.assertRaises(ValueError):
+            h.parse_config(raw)
+
+    def test_missing_tier_rejected(self):
+        with self.assertRaises(ValueError):
+            h.parse_config({"tiers": {"q": {"provider": "x", "model": "y"}}})
+
+    def test_null_budget(self):
+        raw = json.loads((ROOT / "presets" / "gemini-free.json").read_text())
+        self.assertIsNone(h.parse_config(raw).budget_usd)
+
+    def test_user_endpoint_overrides_builtin(self):
+        raw = dict(h.DEFAULT_CONFIG, endpoints={"anthropic": {"api": "openai", "base_url": "http://x", "key_env": []}})
+        self.assertEqual(h.parse_config(raw).endpoint("anthropic")["base_url"], "http://x")
+
+
+class TestKeys(unittest.TestCase):
+    def test_env_file_parsing_skips_comments_and_empty(self):
+        p = tmpdir() / ".env"
+        p.write_text("# ANTHROPIC_TOKEN=old\nANTHROPIC_API_KEY=\nANTHROPIC_API_KEY=sk-new\nX='q'\n")
+        self.assertEqual(h.read_env_file(p), {"ANTHROPIC_API_KEY": "sk-new", "X": "q"})
+
+    def test_get_key_fallback_names(self):
+        ep = h.ENDPOINTS["gemini"]
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(h.get_key(ep, {"GOOGLE_API_KEY": "g"}), "g")
+            self.assertIsNone(h.get_key(ep, {}))
+
+    def test_local_needs_no_key(self):
+        self.assertEqual(h.get_key(h.ENDPOINTS["custom"], {}), "")
+
+
+class TestHeuristicAndParse(unittest.TestCase):
+    def test_heuristic(self):
         self.assertEqual(h.heuristic("what is survivorship")[0], "q")
-
-    def test_heavy_keyword_is_opus(self):
         self.assertEqual(h.heuristic("design the target-state architecture")[0], "o")
-
-    def test_long_plain_task_is_sonnet(self):
         self.assertEqual(h.heuristic(" ".join(["word"] * 40))[0], "s")
 
-
-class TestParseReply(unittest.TestCase):
-    def test_valid(self):
+    def test_parse_reply(self):
         self.assertEqual(h.parse_reply('{"tier":"s","reason":"draft"}'), ("s", "draft"))
-
-    def test_wrapped_in_text(self):
-        self.assertEqual(h.parse_reply('Sure: {"tier":"O","reason":"hard"} done')[0], "o")
-
-    def test_invalid_tier(self):
+        self.assertEqual(h.parse_reply('ok {"tier":"O","reason":"hard"}')[0], "o")
         self.assertIsNone(h.parse_reply('{"tier":"x"}'))
-
-    def test_garbage(self):
-        self.assertIsNone(h.parse_reply("no json here"))
+        self.assertIsNone(h.parse_reply("nope"))
 
 
-class TestCycle(unittest.TestCase):
-    def test_after_cycle_day(self):
-        self.assertEqual(h.cycle_bounds(dt.date(2026, 11, 21), 10),
-                         (dt.date(2026, 11, 10), dt.date(2026, 12, 10)))
+class FakeResp(io.BytesIO):
+    def __enter__(self):
+        return self
 
-    def test_before_cycle_day_wraps_year(self):
-        self.assertEqual(h.cycle_bounds(dt.date(2027, 1, 5), 10),
-                         (dt.date(2026, 12, 10), dt.date(2027, 1, 10)))
-
-    def test_day_31_clamps(self):
-        start, end = h.cycle_bounds(dt.date(2027, 2, 15), 31)
-        self.assertEqual(start, dt.date(2027, 1, 31))
-        self.assertEqual(end, dt.date(2027, 2, 28))
+    def __exit__(self, *a):
+        return False
 
 
-class TestBudget(unittest.TestCase):
-    def _db(self, rows, time_col="started_at"):
-        tmp = Path(tempfile.mkdtemp()) / "state.db"
-        con = sqlite3.connect(tmp)
-        con.execute(f"CREATE TABLE sessions (id TEXT, {time_col}, estimated_cost_usd REAL)")
-        con.executemany("INSERT INTO sessions VALUES (?,?,?)", rows)
-        con.commit()
-        con.close()
-        return tmp
+class TestAdapters(unittest.TestCase):
+    def test_openai_compatible_chat(self):
+        body = json.dumps({"choices": [{"message": {"content": '{"tier":"q","reason":"r"}'}}]}).encode()
+        with mock.patch("urllib.request.urlopen", return_value=FakeResp(body)) as u:
+            out = h.chat(h.ENDPOINTS["xai"], "k", "grok", "sys", "hi")
+        self.assertIn('"tier":"q"', out)
+        req = u.call_args[0][0]
+        self.assertTrue(req.full_url.endswith("/chat/completions"))
+        self.assertEqual(req.get_header("Authorization"), "Bearer k")
 
-    def test_sums_only_current_cycle_epoch_and_iso(self):
-        in_cycle = dt.datetime(2026, 11, 20, 12).timestamp()
-        db = self._db([("a", in_cycle, 1.5), ("b", "2026-11-12T09:00:00", 0.5),
-                       ("c", "2026-11-01T09:00:00", 99.0), ("d", in_cycle * 1000, 0.25)])
-        b = h.read_budget(db, today=dt.date(2026, 11, 21))
-        self.assertAlmostEqual(b.spent, 2.25)
+    def test_anthropic_chat_retries_bearer_on_401(self):
+        import urllib.error
+        ok = json.dumps({"content": [{"type": "text", "text": '{"tier":"o","reason":"r"}'}]}).encode()
+        err = urllib.error.HTTPError("u", 401, "no", {}, None)
+        with mock.patch("urllib.request.urlopen", side_effect=[err, FakeResp(ok)]) as u:
+            out = h.chat(h.ENDPOINTS["anthropic"], "k", "m", "sys", "hi")
+        self.assertIn('"o"', out)
+        self.assertEqual(u.call_args[0][0].get_header("Authorization"), "Bearer k")
 
-    def test_status_tight(self):
-        b = h.Budget(150, 200, dt.date(2026, 11, 10), dt.date(2026, 12, 10), dt.date(2026, 11, 20))
-        self.assertEqual(b.status, "tight")
-
-    def test_status_underuse(self):
-        b = h.Budget(20, 200, dt.date(2026, 11, 10), dt.date(2026, 12, 10), dt.date(2026, 12, 7))
-        self.assertEqual(b.status, "underuse")
-
-    def test_missing_cost_column_returns_none(self):
-        tmp = Path(tempfile.mkdtemp()) / "state.db"
-        con = sqlite3.connect(tmp)
-        con.execute("CREATE TABLE sessions (id TEXT, started_at TEXT)")
-        con.close()
-        self.assertIsNone(h.read_budget(tmp))
+    def test_list_models_strips_prefix(self):
+        body = json.dumps({"data": [{"id": "models/gemini-3.5-flash"}]}).encode()
+        with mock.patch("urllib.request.urlopen", return_value=FakeResp(body)):
+            self.assertIn("gemini-3.5-flash", h.list_models(h.ENDPOINTS["gemini"], "k"))
 
 
 class TestRouting(unittest.TestCase):
     def test_forced(self):
-        self.assertEqual(h.route("anything", forced="o").source, "forced")
+        self.assertEqual(h.route("x", CFG, forced="o").source, "forced")
 
-    def test_falls_back_to_heuristic_without_key(self):
-        with mock.patch.object(h, "load_api_key", return_value=None):
-            d = h.route("what is MDM")
+    def test_heuristic_when_no_classifier(self):
+        with mock.patch.object(h, "classifier_target", return_value=None):
+            d = h.route("what is MDM", CFG)
         self.assertEqual((d.tier, d.source), ("q", "heuristic"))
 
-    def test_uses_classifier_and_passes_budget_hint(self):
-        with mock.patch.object(h, "load_api_key", return_value="k"), \
-             mock.patch.object(h, "classify", return_value=("s", "routine")) as c:
-            b = h.Budget(150, 200, dt.date(2026, 11, 10), dt.date(2026, 12, 10), dt.date(2026, 11, 20))
-            d = h.route("draft an email", budget=b)
+    def test_classifier_with_budget_hint(self):
+        b = h.Budget(150, 200, dt.date(2026, 11, 10), dt.date(2026, 12, 10), dt.date(2026, 11, 20))
+        target = (CFG.tiers["q"], h.ENDPOINTS["anthropic"], "k")
+        with mock.patch.object(h, "classifier_target", return_value=target), \
+             mock.patch.object(h, "chat", return_value='{"tier":"s","reason":"routine"}') as c:
+            d = h.route("draft an email", CFG, budget=b)
         self.assertEqual((d.tier, d.source), ("s", "classifier"))
-        self.assertEqual(c.call_args[0][2], "tight")
+        self.assertIn("run out early", c.call_args[0][3])
+
+    def test_classifier_skips_launch_only_provider(self):
+        raw = json.loads((ROOT / "presets" / "chatgpt-plan.json").read_text())
+        for t in raw["tiers"].values():
+            t["model"] = "m"
+        cfg = h.parse_config(raw)
+        with mock.patch.object(h, "read_env_file", return_value={}):
+            self.assertIsNone(h.classifier_target(cfg))
+
+    def test_mixed_config_falls_through_to_tier_with_key(self):
+        raw = json.loads((ROOT / "presets" / "mixed-budget.json").read_text())
+        raw["tiers"]["q"]["model"] = "llama"
+        cfg = h.parse_config(raw)
+        with mock.patch.object(h, "read_env_file", return_value={}), mock.patch.dict("os.environ", {}, clear=True):
+            tier, ep, key = h.classifier_target(cfg)
+        self.assertEqual(tier.provider, "custom")  # gemini (s) has no key; local needs none
 
 
-class TestLogAndStats(unittest.TestCase):
-    def test_log_then_stats(self):
-        path = Path(tempfile.mkdtemp()) / "log.jsonl"
-        for tier in ("q", "q", "o"):
-            h.log_decision("task", h.Decision(tier, "r", "classifier"), None, path)
-        out = h.stats(path)
+class TestBudget(unittest.TestCase):
+    def test_cycle_bounds(self):
+        self.assertEqual(h.cycle_bounds(dt.date(2026, 11, 21), 10), (dt.date(2026, 11, 10), dt.date(2026, 12, 10)))
+        self.assertEqual(h.cycle_bounds(dt.date(2027, 1, 5), 10), (dt.date(2026, 12, 10), dt.date(2027, 1, 10)))
+        self.assertEqual(h.cycle_bounds(dt.date(2027, 2, 15), 31), (dt.date(2027, 1, 31), dt.date(2027, 2, 28)))
+
+    def test_sum_current_cycle(self):
+        db = tmpdir() / "state.db"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE sessions (id TEXT, started_at, estimated_cost_usd REAL)")
+        ts = dt.datetime(2026, 11, 20, 12).timestamp()
+        con.executemany("INSERT INTO sessions VALUES (?,?,?)",
+                        [("a", ts, 1.5), ("b", "2026-11-12T09:00:00", 0.5), ("c", "2026-11-01", 99), ("d", ts * 1000, 0.25)])
+        con.commit()
+        con.close()
+        self.assertAlmostEqual(h.read_budget(CFG, db, dt.date(2026, 11, 21)).spent, 2.25)
+
+    def test_no_budget_configured(self):
+        raw = json.loads((ROOT / "presets" / "gemini-free.json").read_text())
+        self.assertIsNone(h.read_budget(h.parse_config(raw)))
+
+    def test_status(self):
+        mk = lambda spent, today: h.Budget(spent, 200, dt.date(2026, 11, 10), dt.date(2026, 12, 10), today)
+        self.assertEqual(mk(150, dt.date(2026, 11, 20)).status, "tight")
+        self.assertEqual(mk(20, dt.date(2026, 12, 7)).status, "underuse")
+        self.assertEqual(mk(20, dt.date(2026, 11, 20)).status, "normal")
+
+
+class TestCheck(unittest.TestCase):
+    def test_reports_missing_key_and_bad_model(self):
+        with mock.patch.object(h, "read_env_file", return_value={}), mock.patch.dict("os.environ", {}, clear=True):
+            out = "\n".join(h.check(CFG))
+        self.assertIn("no key", out)
+        with mock.patch.object(h, "read_env_file", return_value={"ANTHROPIC_API_KEY": "k"}), \
+             mock.patch.object(h, "list_models", return_value={"claude-haiku-5-5", "claude-opus-5-5"}):
+            out = "\n".join(h.check(CFG))
+        self.assertIn("✓", out)
+        self.assertIn("not offered", out)  # sonnet missing from fake list
+
+
+class TestLogStatsEval(unittest.TestCase):
+    def test_log_stats(self):
+        p = tmpdir() / "log.jsonl"
+        for t in ("q", "q", "o"):
+            h.log_decision("task", h.Decision(t, "r", "classifier"), CFG, None, p)
+        out = h.stats(p)
         self.assertIn("3 sessions", out)
-        self.assertIn("Haiku", out)
-        self.assertEqual(json.loads(path.read_text().splitlines()[0])["task"], "task")
+        self.assertIn("anthropic/claude-haiku-5-5 2", out)
 
     def test_log_tasks_off(self):
-        path = Path(tempfile.mkdtemp()) / "log.jsonl"
+        p = tmpdir() / "log.jsonl"
         with mock.patch.dict("os.environ", {"H_LOG_TASKS": "0"}):
-            h.log_decision("secret", h.Decision("q", "r", "classifier"), None, path)
-        self.assertNotIn("task", json.loads(path.read_text()))
+            h.log_decision("secret", h.Decision("q", "r", "classifier"), CFG, None, p)
+        self.assertNotIn("task", json.loads(p.read_text()))
 
-
-class TestEvalScore(unittest.TestCase):
-    def test_eval_and_score(self):
-        d = Path(tempfile.mkdtemp())
-        tasks = d / "tasks.txt"
-        tasks.write_text("# comment\nwhat is MDM\ndesign the architecture\n")
+    def test_eval_score(self):
+        d = tmpdir()
+        (d / "t.txt").write_text("# c\nwhat is MDM\ndesign the architecture\n")
         buf = io.StringIO()
-        with mock.patch.object(h, "load_api_key", return_value=None), \
+        with mock.patch.object(h, "classifier_target", return_value=None), \
              mock.patch.object(h, "read_budget", return_value=None):
-            h.run_eval(tasks, out=buf)
-        rows = buf.getvalue().strip().splitlines()
-        self.assertEqual(len(rows), 3)
-        labelled = d / "labelled.csv"
-        labelled.write_text("task,tier,reason,source,expected\n"
-                            "a,q,r,heuristic,q\nb,q,r,heuristic,o\nc,o,r,heuristic,s\n")
-        self.assertIn("1 exact", h.score(labelled))
-        self.assertIn("1 under-routed", h.score(labelled))
-        self.assertIn("1 over-routed", h.score(labelled))
+            h.run_eval(CFG, d / "t.txt", out=buf)
+        self.assertEqual(len(buf.getvalue().strip().splitlines()), 3)
+        (d / "l.csv").write_text("task,tier,reason,source,expected\na,q,r,h,q\nb,q,r,h,o\nc,o,r,h,s\n")
+        s = h.score(d / "l.csv")
+        self.assertIn("1 exact", s)
+        self.assertIn("1 under-routed", s)
+        self.assertIn("1 over-routed", s)
 
 
 if __name__ == "__main__":

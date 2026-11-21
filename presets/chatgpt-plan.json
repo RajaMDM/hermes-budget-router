@@ -1,0 +1,27 @@
+{
+  "description": "ChatGPT subscription via Hermes' openai-codex sign-in, no API key (launch-only, UNTESTED)",
+  "budget_usd": null,
+  "cycle_day": 1,
+  "classifier_tier": "q",
+  "tiers": {
+    "q": {
+      "label": "Codex quick",
+      "provider": "openai-codex",
+      "model": "REPLACE_with_codex_model"
+    },
+    "s": {
+      "label": "Codex standard",
+      "provider": "openai-codex",
+      "model": "REPLACE_with_codex_model"
+    },
+    "o": {
+      "label": "Codex strong",
+      "provider": "openai-codex",
+      "model": "REPLACE_with_codex_model"
+    }
+  },
+  "_notes": [
+    "Sign in first: hermes model \u2192 OpenAI Codex. h can't classify through a subscription sign-in, so it uses keyword rules unless you add an API-key tier.",
+    "Hermes doesn't document how ChatGPT plan limits apply. Watch your plan's usage page."
+  ]
+}

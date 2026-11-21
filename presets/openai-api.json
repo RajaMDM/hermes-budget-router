@@ -1,0 +1,27 @@
+{
+  "description": "OpenAI API key, pay-as-you-go (UNTESTED)",
+  "budget_usd": 30,
+  "cycle_day": 1,
+  "classifier_tier": "q",
+  "tiers": {
+    "q": {
+      "label": "GPT luna",
+      "provider": "openai-api",
+      "model": "gpt-6-luna"
+    },
+    "s": {
+      "label": "GPT terra",
+      "provider": "openai-api",
+      "model": "gpt-6.1-terra"
+    },
+    "o": {
+      "label": "GPT sol",
+      "provider": "openai-api",
+      "model": "gpt-6.1-sol"
+    }
+  },
+  "_notes": [
+    "Model IDs from the provider's pricing page as of Nov 2026. Run `h --check` to confirm they exist for your key.",
+    "OpenAI's model line-up changes often; pick IDs from developers.openai.com/api/docs/pricing."
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "description": "Claude pay-as-you-go API key (Pro/Free plan users): you set the monthly cap",
+  "budget_usd": 30,
+  "cycle_day": 1,
+  "classifier_tier": "q",
+  "tiers": {
+    "q": {
+      "label": "Haiku",
+      "provider": "anthropic",
+      "model": "claude-haiku-5-5"
+    },
+    "s": {
+      "label": "Sonnet",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5"
+    },
+    "o": {
+      "label": "Opus",
+      "provider": "anthropic",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "_notes": [
+    "budget_usd is your own target; also set a hard spend limit in the Claude Console."
+  ]
+}

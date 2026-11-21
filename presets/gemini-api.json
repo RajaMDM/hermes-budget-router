@@ -1,0 +1,27 @@
+{
+  "description": "Google Gemini API key, paid tier (UNTESTED)",
+  "budget_usd": 30,
+  "cycle_day": 1,
+  "classifier_tier": "q",
+  "tiers": {
+    "q": {
+      "label": "Gemini 3.7 Flash",
+      "provider": "gemini",
+      "model": "gemini-3.7-flash"
+    },
+    "s": {
+      "label": "Gemini 3.8 Flash",
+      "provider": "gemini",
+      "model": "gemini-3.8-flash"
+    },
+    "o": {
+      "label": "Gemini 4 Argon",
+      "provider": "gemini",
+      "model": "gemini-4-argon"
+    }
+  },
+  "_notes": [
+    "Model IDs from the provider's pricing page as of Nov 2026. Run `h --check` to confirm they exist for your key.",
+    "Several Gemini prices double on Dec 1, 2026 per Google's pricing page."
+  ]
+}

@@ -1,268 +1,68 @@
-# hermes-claude-credits
+# hermes-budget-router
 
-**Run [Hermes Agent](https://hermes-agent.nousresearch.com) on the monthly Claude API credits included with Max, Ultra and Team plans, and keep the bill under control with a budget-aware model router.**
+**Spend less on AI agents without getting worse answers.** A budget-aware model router and setup guides for [Hermes Agent](https://hermes-agent.nousresearch.com), for any provider: Claude, OpenAI, Gemini, Grok, OpenRouter, or fully local.
 
-> Built and tested end to end on a real setup (Hermes v0.14 → v0.23.3, Claude Ultra, macOS), November 2026.
-> By Raja Shahnawaz Soni · MIT licence
+> Anyone can describe a cost-control framework. This one is a working tool, built while fixing a real setup. Try it.
+> By Raja Shahnawaz Soni · MIT licence · v0.3
 
----
-
-## Contents
-
-1. [The symptom](#1-the-symptom)
-2. [Why it happens: two separate pots of money](#2-why-it-happens-two-separate-pots-of-money)
-3. [The fix, step by step](#3-the-fix-step-by-step)
-4. [Troubleshooting: every error we hit](#4-troubleshooting-every-error-we-hit)
-5. [Keeping costs down](#5-keeping-costs-down)
-6. [`h`: the budget-aware launcher](#6-h-the-budget-aware-launcher)
-7. [What's verified and what isn't](#7-whats-verified-and-what-isnt)
-
----
-
-## 1. The symptom
-
-You have a paid Claude plan with included API credits. You start Hermes and every request fails with:
-
-```
-⚠️  API call failed (attempt 1/3): BadRequestError [HTTP 400]
-   🔌 Provider: anthropic  Model: claude-opus-4-7
-   🌐 Endpoint: https://api.anthropic.com
-   📝 Error: HTTP 400: You're out of extra usage. Add more at claude.ai/settings/usage and keep going.
-```
-
-Restarting, retrying or switching models makes no difference.
-
-## 2. Why it happens: two separate pots of money
-
-A Claude subscription has **two balances that never mix**:
-
-| | **Usage credits** (claude.ai) | **Monthly API credits** (Claude Console) |
-|---|---|---|
-| Where | claude.ai → Settings → Usage | platform.claude.com → Billing → Promotional credits |
-| Who gets it | Pay-as-you-go top-up on any paid plan | Included with Max 5x ($100), Max 20x / Ultra ($200), Team |
-| How a tool reaches it | Signing in with your Claude account (OAuth) | An **API key** from the linked Console organization |
-| Typical balance | **$0** unless you bought some | **$200** (Max 20x / Ultra), refreshed monthly, no rollover |
-
-Third-party apps that sign in with your Claude account draw from the **usage credits** pot. If you never bought any, that pot is empty, so you get the 400 error. Your monthly API credits sit untouched, because Hermes never sends an API key.
-
-**The empty pot Hermes was billing against:**
-
-![claude.ai Usage page showing usage credits at $0](docs/img/01-claude-usage-page-usage-credits-zero.png)
-
-**The pot you actually want, claimed and linked on claude.ai → Settings → Billing:**
-
-![claude.ai Billing page showing $200 monthly API credits linked to a Console org](docs/img/02-claude-billing-api-credits-linked.png)
-
-**Proof that Hermes never reached it, in the Console (Billing → Promotional credits):**
-
-![Console promotional credits showing $200.00 of $200.00 unused](docs/img/04-console-promotional-credits-200.png)
-
-## 3. The fix, step by step
-
-### Step 1: Claim the monthly API credits (once)
-
-On claude.ai go to **Settings → Billing → API credits** and link a Claude Console organization. You need to be the plan subscriber, and Owner, Admin or Billing in that org.
-
-- The link is permanent. Changing it later means contacting support, so pick a personal org you'll build in, not a work one.
-- New subscribers can claim after 7 days on an eligible plan.
-- Confirm the result in the Console under **Billing → Promotional credits** (screenshot above).
-
-### Step 2: Create an API key in the *linked* org
-
-1. In the Console, make sure the org switcher (bottom left) shows the linked org, then click **Create key**.
-
-   ![Console API keys page: linked org selected, Create key button](docs/img/03-console-api-keys.png)
-
-2. When asked where your code runs, choose **Somewhere else**. The other options sign in without a key, and Hermes needs a key.
-
-   ![Connect to the Claude API dialog with "Somewhere else" highlighted](docs/img/05-console-connect-choose-somewhere-else.png)
-
-3. Name it (e.g. `hermes-local`) and set an expiry you'll remember. For **Scope, choose the Default workspace, not Organization.** An organization-scoped key needs an `anthropic-workspace-id` header on every request, and it can also manage your whole org if it leaks.
-
-   ![Create API key dialog, warning against Organization scope](docs/img/06-console-create-key-scope-warning.png)
-
-4. Copy the key immediately. It is shown once.
-
-### Step 3: Give the key to Hermes
-
-`~/.hermes/.env` is a **file**, not a folder. Append the key without opening an editor and without putting it in your shell history:
-
-```bash
-echo "" >> ~/.hermes/.env       # make sure the key starts on its own line
-cat >> ~/.hermes/.env           # paste: ANTHROPIC_API_KEY=sk-ant-...   then Enter, then Ctrl+D
-chmod 600 ~/.hermes/.env
-```
-
-Check for duplicates. Our `.env` already had an empty `ANTHROPIC_API_KEY=` placeholder:
-
-```bash
-grep -n ANTHROPIC_API_KEY ~/.hermes/.env | sed 's/=.*/=****/'
-# If you see two lines, inspect them without revealing the key:
-sed -n '403p;405p' ~/.hermes/.env | awk -F= '{print NR": length "length($2)", starts "substr($2,1,10)}'
-# Delete the empty one by line number (macOS sed needs the '' after -i):
-cp ~/.hermes/.env ~/.hermes/.env.bak && sed -i '' '403d' ~/.hermes/.env
-```
-
-Make sure your shell isn't exporting a different key:
-
-```bash
-echo "shell key: ${ANTHROPIC_API_KEY:+SET}"   # should print "shell key:" with nothing after it
-```
-
-### Step 4: Remove the subscription credentials (this is the step that actually fixes it)
-
-Adding a key isn't enough. Hermes keeps a **credential pool** and uses the first usable entry, and ours had two OAuth credentials ahead of the key:
-
-```bash
-hermes auth list
-```
-```
-anthropic (3 credentials):
-  #1  ANTHROPIC_TOKEN      oauth   env:ANTHROPIC_TOKEN ←      ← subscription token, still being used
-  #2  claude_code          oauth   claude_code exhausted       ← borrowed Claude Code login
-  #3  ANTHROPIC_API_KEY    oauth   env:ANTHROPIC_API_KEY       ← your key, never reached
-```
-
-Disable the token in `.env` (commented out, so you can undo it), then remove the borrowed login:
-
-```bash
-sed -i '' 's/^ANTHROPIC_TOKEN=/# ANTHROPIC_TOKEN=/' ~/.hermes/.env
-hermes auth remove anthropic 1        # provider AND index are both required
-hermes auth list                      # only ANTHROPIC_API_KEY should remain, with the ←
-```
-
-Stop Hermes from re-adopting your Claude Code login by adding this to `~/.hermes/config.yaml` (append it if there's no `auth:` section yet):
-
-```bash
-printf '\nauth:\n  adopt_external_logins: false\n' >> ~/.hermes/config.yaml
-```
-
-> The key shows as type `oauth` in the list even though it's an API key (newer `sk-ant-usr…` keys). It worked anyway in our test.
-
-### Step 5: Update Hermes if it's older than the model
-
-Old Hermes builds send a thinking parameter that current models reject:
-
-```
-HTTP 400: "thinking.type.enabled" is not supported for this model.
-Use "thinking.type.adaptive" and "output_config.effort" to control thinking behavior.
-```
-
-We were on v0.14.0 (May 2026). `hermes --version` said "Up to date", which was wrong. Updating anyway pulled ~67,000 commits:
-
-```bash
-hermes update
-hermes --version          # we landed on v0.23.3 (2026.9.24)
-```
-
-Then set a current model (line 2 of our config):
-
-```bash
-sed -i '' '2s/claude-opus-4-7/claude-opus-5-5/' ~/.hermes/config.yaml
-```
-
-### Step 6: Repair the gateway after a big update
-
-If the update leaves the background gateway (Telegram etc.) failing with `service_identity_unverified`, re-register the service:
-
-```bash
-hermes gateway stop
-hermes gateway uninstall
-hermes gateway install
-hermes gateway start
-hermes gateway status     # expect: "Service definition matches the current Hermes install"
-```
-
-### Step 7: Verify
-
-```bash
-hermes chat --provider anthropic
-```
-```
-❯ say hi in five words
-☤ Hermes
-Hi Raja, ready when you are.
-```
-
-Then refresh **Console → Billing → Promotional credits**. The balance should drop slightly below $200.00. If it does, Hermes is spending the right pot.
-
-**Clean up:** delete the backups (they contain old tokens), and once you're confident, delete the commented `# ANTHROPIC_TOKEN=` line too.
-
-```bash
-rm ~/.hermes/.env.bak ~/.hermes/config.yaml.bak
-```
-
-## 4. Troubleshooting: every error we hit
-
-| Error / symptom | Cause | Fix |
-|---|---|---|
-| `You're out of extra usage` (400) | Hermes authenticating with subscription OAuth | Step 4: remove `ANTHROPIC_TOKEN` and `claude_code` from the pool |
-| `"thinking.type.enabled" is not supported` (400) | Hermes older than the model | Step 5: `hermes update` |
-| `hermes --version` says "Up to date" on an old build | Stale version check | Run `hermes update` anyway |
-| `Gateway inaccessible: service_identity_unverified` | Service registered by the old version | Step 6 |
-| `warning: Failed to parse pyproject.toml … exclude-newer = "3 days"` | `uv` too old to read relative dates | Harmless for us. If deps fail, `brew upgrade uv` or `uv self update` |
-| `Web UI npm install failed` | Probably an old Node.js | Optional. The CLI works without it |
-| `hermes auth remove: error: … required: target` | Wrong syntax | `hermes auth remove <provider> <index>` |
-| `cd: not a directory: ~/.hermes/.env` | `.env` is a file | Use `cat >>`, `grep`, `sed` on it as shown |
-| nano/pico shortcuts don't work on macOS | macOS ships `pico` as `nano` | Avoid the editor and use the `cat >>` method |
-
-## 5. Keeping costs down
-
-API credits are charged at API prices, so how Hermes works matters more than which plan you're on.
-
-### What actually drives cost
-
-Numbers from our first sessions (Hermes' own estimates):
-
-| Session | Model | Tool calls | Est. cost |
-|---|---|---|---|
-| 2 questions answered by "researching" (docs fetches, greps, DB query) | Opus 5.5 | 20 | ~$0.38 |
-| One-paragraph definition, answered directly | Opus 5.5 | 0 | ~$0.02 |
-| Same kind of question, plus a per-task cost lookup | Opus 5.5 | 1 | ~$0.06 |
-
-Every tool call resends the whole context, so **the number of tool calls usually drives cost more than the choice of model.** Opus 5.5 is exactly 2× Sonnet 5.5 per token. Haiku 5.5 is about 40× cheaper than Opus for prompts under 100K tokens.
-
-### Move background tasks to Haiku
-
-Hermes runs background tasks (compression, titles, memory, search…) on your main model by default. [`scripts/aux-to-haiku.sh`](scripts/aux-to-haiku.sh) moves the routine ones to Haiku and leaves safety-relevant ones (`approval`), `vision` and unknown ones alone:
-
-```bash
-bash scripts/aux-to-haiku.sh       # backs up config.yaml first, prints the result
-```
-
-### Give Hermes a cost policy
-
-[`soul/cost-policy.md`](soul/cost-policy.md) is a short block for `~/.hermes/SOUL.md`. It caps tool calls on simple questions, makes Hermes offer (never apply) "spend more for a better result" options with a price, and adds a footer with the model and cost. With the policy in place, a definition question cost ~$0.02 and made no tool calls. The unconstrained session above cost ~$0.38.
-
-## 6. `h`: the budget-aware launcher
-
-Hermes can't change model in the middle of a reply, and changing model mid-session throws away the prompt cache. So `h` picks the model **before** the session starts.
-
-```bash
-h what is survivorship in one sentence
-→ Haiku (claude-haiku-5-5): Simple definition request; quick factual answer suffices.
+```text
+$ h what is survivorship in one sentence
+→ Haiku (anthropic/claude-haiku-5-5): Simple definition request; quick factual answer suffices.
   cycle ~$0.88 of $200 (0%) · 19d left · pace ~$1
-  Task copied: paste it (⌘V / Ctrl+Shift+V) as your first message.
+
+$ h design the target-state architecture for multi-region customer MDM
+→ Opus (anthropic/claude-opus-5-5): Multi-region architecture with design trade-offs.
 ```
+<sub>First decision is from a real run. The second is illustrative.</sub>
+
+---
+
+## Why this exists
+
+1. **The model is fixed for the whole session, and switching mid-session is expensive.** Hermes can't change model in the middle of a reply. If you change it mid-conversation, the prompt cache is thrown away and you pay for the full context again. So the right moment to pick a model is **before** the session starts.
+2. **Tool loops cost more than model choice.** In our measurements, two questions that set off 20 tool calls cost ~$0.38. A direct answer on the same expensive model cost ~$0.02. The top-tier model is only 2× the mid-tier one per token.
+3. **People pay for capacity they never use.** Claude Max/Ultra plans include $100–$200 a month of API credit that most agent setups never reach ([guide](docs/guides/claude-api-credits.md)).
+
+## Which setup are you?
+
+| You have… | Start here | Cost |
+|---|---|---|
+| **Claude Max, Ultra or Team** | [Claude credits guide](docs/guides/claude-api-credits.md) · `h --init claude-credits` | Included $100–$200/month |
+| **Claude Pro or Free** | [Other setups](docs/guides/other-setups.md#claude-pro-or-free) · `h --init claude-paygo` | Pay-as-you-go, your cap |
+| **ChatGPT plan** | [Other setups](docs/guides/other-setups.md#chatgpt-plan) · `h --init chatgpt-plan` | Within your plan |
+| **SuperGrok / X Premium+** | [Other setups](docs/guides/other-setups.md#supergrok-or-x-premium) | Within your plan |
+| **An OpenAI, Gemini or xAI API key** | [Other setups](docs/guides/other-setups.md#pay-as-you-go-api-keys) · `h --init openai-api` / `gemini-api` / `xai` | Pay-as-you-go |
+| **No budget at all** | [Other setups](docs/guides/other-setups.md#zero-budget) · `h --init gemini-free` or `local-ollama` | $0 |
+| **A bit of everything** | `h --init mixed-budget`: local for quick tasks, free Gemini for routine work, paid Claude only for hard tasks | Lowest paid spend |
+
+**Only the Claude-credits path has been tested end to end.** The other presets use model IDs taken from each provider's pricing page in Nov 2026. `h --check` checks them against your provider before you rely on them. Reports from other setups are welcome as issues.
+
+---
+
+## `h`: the launcher
 
 ### What it does
 
-1. **Routes** the task with one tiny Haiku call (a fraction of a cent) into Haiku / Sonnet / Opus. When unsure, it picks the cheaper tier. If the call fails it falls back to keyword rules, so it never blocks you.
-2. **Checks your budget.** It reads this cycle's spend from Hermes' own `state.db`. If you're on pace to run out early, the router is told to be stricter about Opus. If unused credit is about to expire, it leans stronger.
-3. **Logs** every decision to `~/.hermes/h-routing.jsonl` for `h --stats`.
-4. **Launches** `hermes chat` with the chosen model.
+1. **Routes:** one tiny call to your cheapest model sorts the task into **quick / standard / strong**. When unsure, it picks the cheaper tier. If the call fails, it falls back to keyword rules, so it never blocks you.
+2. **Budget-aware:** it reads this cycle's spend from Hermes' own database. If you're on pace to overspend, the router is stricter about the strong tier. If unused credit is about to expire, it leans stronger. It never downgrades silently.
+3. **Mixes providers:** each tier is a `(provider, model)` pair, so quick tasks can stay local and only hard ones reach a paid model.
+4. **Logs:** every decision goes to `~/.hermes/h-routing.jsonl` for `--stats`.
+5. **Launches** `hermes chat --provider … --model …`.
 
 ### Install
 
 ```bash
-mkdir -p ~/bin
-curl -fsSL https://raw.githubusercontent.com/RajaMDM/hermes-claude-credits/main/bin/h -o ~/bin/h
-chmod +x ~/bin/h
+git clone https://github.com/RajaMDM/hermes-budget-router ~/.local/share/hermes-budget-router
+mkdir -p ~/bin && ln -sf ~/.local/share/hermes-budget-router/bin/h ~/bin/h
 grep -q 'HOME/bin' ~/.zshrc || echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc && type h        # expect: h is /Users/<you>/bin/h
+source ~/.zshrc
+
+h --presets                 # see the options
+h --init claude-credits     # or any preset; writes ~/.hermes/h.json
+h --check                   # keys present? models exist at the provider?
 ```
 
-Needs Python 3.8+ and Hermes on your PATH. It reads the API key from `~/.hermes/.env`.
+Needs Python 3.9+ and Hermes on your PATH. API keys are read from your environment or `~/.hermes/.env`, the same place Hermes reads them.
 
 ### Commands
 
@@ -270,55 +70,71 @@ Needs Python 3.8+ and Hermes on your PATH. It reads the API key from `~/.hermes/
 |---|---|
 | `h <task>` | Route, then launch Hermes |
 | `h` | Prompt for the task (handy for long or punctuation-heavy tasks) |
-| `h -q / -s / -o <task>` | Force Haiku / Sonnet / Opus |
-| `h -n <task>` | Dry run: show the decision, don't launch |
+| `h -q / -s / -o <task>` | Force quick / standard / strong |
+| `h -n <task>` | Dry run: show the decision only |
+| `h --init <preset>` · `h --presets` | Set up from a preset |
+| `h --check` | Verify each tier: key present, model offered by the provider |
 | `h --budget` | Cycle spend, days left, projected spend |
-| `h --stats` | Routing mix over the last 30 days |
-| `h --eval tasks.txt > routes.csv` | Route a list of tasks for labelling |
-| `h --score routes.csv` | Accuracy after you fill the `expected` column |
+| `h --stats` | Routing mix and models used, last 30 days |
+| `h --eval tasks.txt > routes.csv` · `h --score routes.csv` | Measure routing accuracy against your own labels |
 
 Quote tasks containing `? * ! $ '`, e.g. `h "what's the cost?"`.
 
-### Configuration (environment variables)
+### Config: `~/.hermes/h.json`
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `H_MODEL_Q` / `H_MODEL_S` / `H_MODEL_O` | Haiku / Sonnet / Opus 5.5 | Model IDs per tier |
-| `H_CLASSIFIER_MODEL` | Haiku tier | Model that does the routing |
-| `H_BUDGET_USD` | `200` | Your monthly credit |
-| `H_CYCLE_DAY` | `10` | Day of month your credit is granted |
-| `H_PAUSE` | `1.5` | Seconds to show the decision before Hermes clears the screen |
-| `H_FIRST_MESSAGE_FLAG` | *(unset)* | If your Hermes has a flag that takes the first message, set it here to skip the paste |
-| `H_LOG_TASKS` | `1` | `0` = don't store task previews in the log |
-| `H_DEBUG` | *(unset)* | `1` = explain fallbacks |
+```json
+{
+  "budget_usd": 20,
+  "cycle_day": 1,
+  "classifier_tier": "s",
+  "tiers": {
+    "q": {"label": "local small", "provider": "custom",    "model": "your-ollama-tag"},
+    "s": {"label": "Gemini Flash", "provider": "gemini",   "model": "gemini-3.5-flash"},
+    "o": {"label": "Claude Sonnet","provider": "anthropic","model": "claude-sonnet-5-5"}
+  }
+}
+```
 
-### Measure it before you trust it
+- `provider` is the Hermes provider ID (`anthropic`, `openai-api`, `gemini`, `xai`, `openrouter`, `deepseek`, `custom`, `openai-codex`, `xai-oauth`, …).
+- `budget_usd: null` turns budget tracking off (free and local setups).
+- `classifier_tier` is the tier whose model does the routing. h falls through to any tier it can reach.
+- Subscription sign-ins (`openai-codex`, `xai-oauth`, `copilot`) can be **launched** but can't run the classifier. Add one API-key tier, or let h use keyword rules.
+- Other OpenAI-compatible servers: add `"endpoints": {"my-provider": {"api": "openai", "base_url": "https://…/v1", "key_env": ["MY_KEY"]}}`.
+
+Environment: `H_PAUSE` (seconds to show the decision, default 1.5), `H_FIRST_MESSAGE_FLAG` (if your Hermes takes a first message as a flag, pass it here to skip the paste step), `H_LOG_TASKS=0`, `H_DEBUG=1`.
+
+### Measure before you trust it
 
 ```bash
-h --eval examples/tasks.txt > routes.csv    # fill the 'expected' column with q / s / o
+h --eval examples/tasks.txt > routes.csv     # fill the 'expected' column with q / s / o
 h --score routes.csv
-# e.g. 30 labelled tasks: 24 exact (80%), 3 under-routed (quality risk), 3 over-routed (cost waste)
+# 30 labelled tasks: 24 exact (80%), 3 under-routed (quality risk), 3 over-routed (cost waste)
 ```
-
-Under-routing (too weak a model) hurts quality. Over-routing (too strong) wastes money. Tune the rubric in `SYSTEM_PROMPT` against your own tasks.
-
-### Run the tests
-
-```bash
-python3 -m unittest discover -s tests
-```
-
-## 7. What's verified and what isn't
-
-**Verified in this setup:** every command, error and fix in sections 1–4. Hermes v0.23.3 working against the API key. The `h` classifier routing a definition to Haiku and launching Hermes on it. 20 unit tests passing.
-
-**Not verified / your mileage may vary:**
-- **Budget figures** come from Hermes' own price table, not the Console. Compare them with the Console for a day before trusting them. Reading the real balance needs an admin key, which we deliberately don't give an agent.
-- **The `state.db` schema** is detected at runtime. If `h --budget` says unavailable, run `H_DEBUG=1 h --budget` and open an issue.
-- **Auth style:** `h` tries `x-api-key`, then `Bearer`, because Hermes labels `sk-ant-usr` keys as OAuth. It's not confirmed which one succeeds for every key type.
-- **Pricing, plan credits and Hermes behaviour change.** Check [Anthropic's docs on API credits](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers) and your Hermes version.
-- **Classifier accuracy** hasn't been measured on a large task set yet. Use `--eval` / `--score`.
 
 ---
 
-*Not affiliated with Anthropic or Nous Research. "Claude" and "Hermes Agent" are their respective owners' products.*
+## Also in this repo
+
+| | |
+|---|---|
+| [`soul/cost-policy.md`](soul/cost-policy.md) | A short block for Hermes' `SOUL.md`: caps tool calls on simple questions, offers paid upgrades **with a price** instead of applying them, and adds a model + cost footer |
+| [`scripts/aux-to-cheap.sh`](scripts/aux-to-cheap.sh) | Moves Hermes' routine background tasks (compression, titles, memory, search) to a cheap model. Keeps `approval` on the strong one |
+| [`docs/guides/`](docs/guides) | Setup guides, with screenshots for the Claude path |
+| [`docs/DEFENSE_BRIEF.md`](docs/DEFENSE_BRIEF.md) | Why each design choice was made, and what was rejected |
+
+## Limits, stated plainly
+
+- **Cost figures are Hermes' estimates** from its own price table, not your provider's bill. Check them against your provider's console.
+- **One paste step remains.** h copies the task, and you paste it as the first message. Set `H_FIRST_MESSAGE_FLAG` once you know your Hermes version's flag.
+- **Routing accuracy hasn't been measured on a large task set yet.** Use `--eval` / `--score` and share your numbers.
+- **Provider line-ups change monthly.** Run `h --check` after any provider announcement.
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests     # 28 tests, no network needed
+```
+
+---
+
+*Not affiliated with Anthropic, OpenAI, Google, xAI, OpenRouter or Nous Research. Product names belong to their owners.*

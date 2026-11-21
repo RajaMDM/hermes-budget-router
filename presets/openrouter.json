@@ -1,0 +1,26 @@
+{
+  "description": "OpenRouter: one key, models from many providers (fill in model slugs)",
+  "budget_usd": 30,
+  "cycle_day": 1,
+  "classifier_tier": "q",
+  "tiers": {
+    "q": {
+      "label": "cheap",
+      "provider": "openrouter",
+      "model": "REPLACE_with_cheap_model_slug"
+    },
+    "s": {
+      "label": "standard",
+      "provider": "openrouter",
+      "model": "REPLACE_with_standard_model_slug"
+    },
+    "o": {
+      "label": "strong",
+      "provider": "openrouter",
+      "model": "REPLACE_with_strong_model_slug"
+    }
+  },
+  "_notes": [
+    "Copy slugs like vendor/model-name from openrouter.ai/models, then run h --check."
+  ]
+}

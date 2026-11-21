@@ -1,0 +1,27 @@
+{
+  "description": "Local for quick tasks, free Gemini for routine, paid Claude only for hard ones",
+  "budget_usd": 20,
+  "cycle_day": 1,
+  "classifier_tier": "s",
+  "tiers": {
+    "q": {
+      "label": "local small",
+      "provider": "custom",
+      "model": "REPLACE_with_small_model_tag"
+    },
+    "s": {
+      "label": "Gemini 3.5 Flash (free)",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash"
+    },
+    "o": {
+      "label": "Claude Sonnet",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "_notes": [
+    "Classifier runs on the free Gemini tier. Budget covers only the paid Claude tier.",
+    "Model IDs from the provider's pricing page as of Nov 2026. Run `h --check` to confirm they exist for your key."
+  ]
+}

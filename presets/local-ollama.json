@@ -1,0 +1,26 @@
+{
+  "description": "Fully local via Ollama: $0, private, needs a capable machine",
+  "budget_usd": null,
+  "cycle_day": 1,
+  "classifier_tier": "q",
+  "tiers": {
+    "q": {
+      "label": "local small",
+      "provider": "custom",
+      "model": "REPLACE_with_small_model_tag"
+    },
+    "s": {
+      "label": "local medium",
+      "provider": "custom",
+      "model": "REPLACE_with_medium_model_tag"
+    },
+    "o": {
+      "label": "local large",
+      "provider": "custom",
+      "model": "REPLACE_with_large_model_tag"
+    }
+  },
+  "_notes": [
+    "Use tags from `ollama list`. Hermes must be configured for the custom endpoint http://localhost:11434/v1 (hermes model)."
+  ]
+}

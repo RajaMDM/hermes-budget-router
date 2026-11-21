@@ -26,3 +26,11 @@
 - Auth: tries `x-api-key`, then `Bearer`. Unconfirmed which one `sk-ant-usr` keys need.
 - Budget: `state.db` → `sessions.estimated_cost_usd`. Timestamp column auto-detected (`started_at`, `created_at`, …). Epoch seconds/ms or ISO. Hermes' estimates, not the Console balance.
 - Cycle anchored on `H_CYCLE_DAY` (default 10). Real expiry observed 3 days after the next grant (Nov 10 grant → Dec 13 expiry).
+
+## v0.3 multi-provider design
+- Config `~/.hermes/h.json` (or `$H_CONFIG`). Missing file → built-in claude-credits default, so existing installs keep working.
+- `ENDPOINTS` maps Hermes provider IDs to `{api: anthropic|openai, base_url, key_env[]}`. Gemini uses its OpenAI-compatible base `…/v1beta/openai`. Model IDs listed there may carry a `models/` prefix, which is stripped.
+- Classifier target = configured tier, else any tier whose provider has an endpoint and a key. Local `custom` needs no key, so it counts as reachable even if Ollama is down. The heuristic then catches it.
+- Placeholders containing `REPLACE` are rejected at load time, so unfinished presets fail loudly instead of launching a bad model.
+- Presets are found next to the script (`bin/../presets`), with symlinks resolved. A curl-only install of `bin/h` won't see presets. Use git clone plus a symlink.
+- Python 3.9+ (`str.removeprefix`).

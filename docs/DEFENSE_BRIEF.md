@@ -20,3 +20,12 @@ Compression, titles, memory filing and search are mechanical. Approving shell co
 
 **Why the budget figures are labelled "estimate".**
 They come from Hermes' own price table. The authoritative balance needs an admin key, which we deliberately don't give to an agent.
+
+**Why support other providers at all?**
+The core problems (model fixed per session, tool loops driving cost, unused included credit) aren't Claude-specific. Tying the router to one vendor would also tie users to that vendor's prices.
+
+**Why verify model IDs live (`h --check`) instead of trusting presets?**
+In 2026 alone, xAI retired eight models in one month, and OpenAI and Google renamed whole line-ups. Presets go stale. Asking the provider's `/models` endpoint is the only reliable check.
+
+**Why not use a hosted router (OpenRouter auto-routing, LiteLLM, etc.)?**
+They route per request, which breaks prompt caching across a session. They also add a hop and a bill of their own. h routes once per session and keeps every provider direct. OpenRouter is still supported as a provider for people who want one bill.

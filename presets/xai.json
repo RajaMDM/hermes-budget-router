@@ -1,0 +1,27 @@
+{
+  "description": "xAI Grok API key, pay-as-you-go (UNTESTED)",
+  "budget_usd": 30,
+  "cycle_day": 1,
+  "classifier_tier": "q",
+  "tiers": {
+    "q": {
+      "label": "Grok 4.3",
+      "provider": "xai",
+      "model": "grok-4.3"
+    },
+    "s": {
+      "label": "Grok 4.3",
+      "provider": "xai",
+      "model": "grok-4.3"
+    },
+    "o": {
+      "label": "Grok 4.6",
+      "provider": "xai",
+      "model": "grok-4.6"
+    }
+  },
+  "_notes": [
+    "Model IDs from the provider's pricing page as of Nov 2026. Run `h --check` to confirm they exist for your key.",
+    "xAI retires models often (eight were retired in May 2026)."
+  ]
+}
