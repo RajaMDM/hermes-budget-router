@@ -1,0 +1,24 @@
+# Sample tasks for `h --eval examples/tasks.txt > routes.csv`.
+# Replace with 30+ of your own real tasks for a meaningful score.
+what is survivorship in one sentence
+define match versus merge in MDM
+summarise this paragraph in two lines
+convert this list to a markdown table
+what does HTTP 429 mean
+fix the typo in my README heading
+rename the variables in this function to snake_case
+draft an email to my team about the new stewardship workflow
+write a python script that dedupes a CSV by email
+add type hints and docstrings to this module
+write unit tests for the date parsing helper
+turn these meeting notes into action items with owners
+explain this stack trace and suggest a fix
+write a LinkedIn post announcing my open-source tool
+design the target-state architecture for multi-region customer MDM
+compare build versus buy for a policy engine with trade-offs
+review this data governance policy for gaps and contradictions
+debug why the sync job intermittently drops records under load
+plan the migration of supplier master data to a new platform
+draft a board-level proposal for a data quality programme
+refactor this 2000-line module into clean services
+write a one-page architecture note on cross-border data controls

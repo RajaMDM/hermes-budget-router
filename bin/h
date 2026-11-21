@@ -1,0 +1,455 @@
+#!/usr/bin/env python3
+"""h — budget-aware model router for Hermes Agent sessions on Claude API credits.
+
+Picks the cheapest Claude model that fits a task, using a tiny Haiku call (falls back
+to keyword rules offline), checks this cycle's spend from Hermes' own state.db, logs
+every decision, then launches `hermes chat` with that model.
+
+Usage:
+  h <task>              route the task, then launch Hermes
+  h                     prompt for the task
+  h -q|-s|-o <task>     force Haiku / Sonnet / Opus
+  h -n <task>           dry run: show the routing decision, don't launch
+  h --budget            show this cycle's estimated spend and pace
+  h --stats             summarise past routing decisions
+  h --eval FILE         route every line of FILE (dry run), print CSV for labelling
+  h --score FILE.csv    accuracy of a labelled eval CSV (fill the 'expected' column)
+  h --help              this text
+
+Environment (all optional):
+  H_MODEL_Q / H_MODEL_S / H_MODEL_O   model IDs per tier
+  H_CLASSIFIER_MODEL                  model used for routing (default: Haiku tier)
+  H_BUDGET_USD        monthly credit (default 200)
+  H_CYCLE_DAY         day of month the credit is granted (default 10)
+  H_PAUSE             seconds to show the decision before launching (default 1.5)
+  H_FIRST_MESSAGE_FLAG  Hermes flag that takes an initial message; if set, the task is
+                        passed directly instead of via the clipboard
+  H_LOG_TASKS=0       don't store task previews in the routing log
+  H_DEBUG=1           verbose diagnostics
+"""
+from __future__ import annotations
+
+import csv
+import datetime as dt
+import json
+import logging
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+__version__ = "0.2.0"
+
+HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+ENV_FILE = HERMES_HOME / ".env"
+STATE_DB = HERMES_HOME / "state.db"
+LOG_FILE = HERMES_HOME / "h-routing.jsonl"
+API_URL = "https://api.anthropic.com/v1/messages"
+
+MODELS: dict[str, str] = {
+    "q": os.environ.get("H_MODEL_Q", "claude-haiku-5-5"),
+    "s": os.environ.get("H_MODEL_S", "claude-sonnet-5-5"),
+    "o": os.environ.get("H_MODEL_O", "claude-opus-5-5"),
+}
+LABELS: dict[str, str] = {"q": "Haiku", "s": "Sonnet", "o": "Opus"}
+CLASSIFIER_MODEL = os.environ.get("H_CLASSIFIER_MODEL", MODELS["q"])
+
+HEAVY = re.compile(
+    r"\b(architect\w*|design|strateg\w*|review|debug|refactor|deck|proposal|policy|"
+    r"governance|trade-?offs?|migrat\w*|compare|build)\b",
+    re.IGNORECASE,
+)
+
+SYSTEM_PROMPT = """You route tasks to the cheapest Claude model that will do them well.
+q = Haiku: definitions, quick facts, lookups, short summaries, simple rewrites, formatting.
+s = Sonnet: routine coding and edits, drafts, emails, multi-step but well-defined work.
+o = Opus: architecture and design trade-offs, hard debugging, long builds, stakeholder or public documents, ambiguous problems.
+When unsure between two tiers, pick the cheaper one.{budget_hint}
+Reply with JSON only: {{"tier":"q|s|o","reason":"<max 12 words>"}}"""
+
+BUDGET_HINTS: dict[str, str] = {
+    "tight": "\nBudget is on pace to run out early: only choose o when the task clearly needs it.",
+    "underuse": "\nUnused credit expires soon: when torn between two tiers, choose the stronger one.",
+    "normal": "",
+    "unknown": "",
+}
+
+log = logging.getLogger("h")
+
+
+# ---------------------------------------------------------------- data types
+@dataclass
+class Budget:
+    """Estimated spend for the current credit cycle, from Hermes' own cost estimates."""
+    spent: float
+    budget: float
+    cycle_start: dt.date
+    cycle_end: dt.date
+    today: dt.date
+
+    @property
+    def days_elapsed(self) -> int:
+        return max((self.today - self.cycle_start).days, 1)
+
+    @property
+    def days_total(self) -> int:
+        return max((self.cycle_end - self.cycle_start).days, 1)
+
+    @property
+    def days_left(self) -> int:
+        return max((self.cycle_end - self.today).days, 0)
+
+    @property
+    def projected(self) -> float:
+        return self.spent / self.days_elapsed * self.days_total
+
+    @property
+    def status(self) -> str:
+        if self.days_left <= 5 and (self.budget - self.spent) > 0.25 * self.budget:
+            return "underuse"
+        if self.projected > self.budget:
+            return "tight"
+        return "normal"
+
+    def line(self) -> str:
+        pct = 100 * self.spent / self.budget if self.budget else 0
+        msg = (f"cycle ~${self.spent:.2f} of ${self.budget:.0f} ({pct:.0f}%) · "
+               f"{self.days_left}d left · pace ~${self.projected:.0f}")
+        return msg + {"tight": " · ⚠ on pace to run out",
+                      "underuse": " · unused credit expiring",
+                      "normal": ""}[self.status]
+
+
+@dataclass
+class Decision:
+    tier: str
+    reason: str
+    source: str  # classifier | heuristic | forced
+
+    @property
+    def model(self) -> str:
+        return MODELS[self.tier]
+
+
+# ---------------------------------------------------------------- budget
+def cycle_bounds(today: dt.date, cycle_day: int) -> tuple[dt.date, dt.date]:
+    """Return (start, end) of the credit cycle containing `today`, anchored on `cycle_day`."""
+    def anchor(year: int, month: int) -> dt.date:
+        for d in (cycle_day, 28):  # clamp for short months
+            try:
+                return dt.date(year, month, d)
+            except ValueError:
+                continue
+        raise ValueError("bad cycle day")
+
+    this = anchor(today.year, today.month)
+    if today >= this:
+        start = this
+        y, m = (today.year + (today.month == 12), today.month % 12 + 1)
+        end = anchor(y, m)
+    else:
+        end = this
+        y, m = (today.year - (today.month == 1), (today.month - 2) % 12 + 1)
+        start = anchor(y, m)
+    return start, end
+
+
+def _to_date(value: object) -> dt.date | None:
+    """Parse an epoch (s or ms) or ISO-ish timestamp into a date."""
+    if value is None:
+        return None
+    try:
+        num = float(value)  # type: ignore[arg-type]
+        if num > 1e12:
+            num /= 1000
+        return dt.datetime.fromtimestamp(num).date()
+    except (TypeError, ValueError):
+        pass
+    try:
+        return dt.datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def read_budget(db: Path = STATE_DB, today: dt.date | None = None) -> Budget | None:
+    """Sum Hermes' estimated_cost_usd for sessions in the current cycle. None if unavailable."""
+    today = today or dt.date.today()
+    start, end = cycle_bounds(today, int(os.environ.get("H_CYCLE_DAY", "10")))
+    budget = float(os.environ.get("H_BUDGET_USD", "200"))
+    if not db.exists():
+        log.debug("No state.db at %s", db)
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+        cols = [r[1] for r in con.execute("PRAGMA table_info(sessions)")]
+        if "estimated_cost_usd" not in cols:
+            log.debug("sessions table has no estimated_cost_usd; columns: %s", cols)
+            return None
+        time_col = next((c for c in ("started_at", "created_at", "start_time", "updated_at", "timestamp")
+                         if c in cols), None)
+        if time_col is None:
+            log.debug("No timestamp column found in sessions: %s", cols)
+            return None
+        rows = con.execute(f"SELECT {time_col}, estimated_cost_usd FROM sessions").fetchall()
+        con.close()
+    except sqlite3.Error as exc:
+        log.debug("state.db read failed: %s", exc)
+        return None
+    spent = sum(float(c or 0) for t, c in rows if (d := _to_date(t)) and start <= d <= today)
+    return Budget(spent=spent, budget=budget, cycle_start=start, cycle_end=end, today=today)
+
+
+# ---------------------------------------------------------------- routing
+def load_api_key() -> str | None:
+    """Return ANTHROPIC_API_KEY from the environment, else from Hermes' .env."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return os.environ["ANTHROPIC_API_KEY"]
+    try:
+        for line in ENV_FILE.read_text().splitlines():
+            if line.startswith("ANTHROPIC_API_KEY="):
+                value = line.split("=", 1)[1].strip().strip('"').strip("'")
+                return value or None
+    except OSError as exc:
+        log.debug("Could not read %s: %s", ENV_FILE, exc)
+    return None
+
+
+def parse_reply(text: str) -> tuple[str, str] | None:
+    """Extract (tier, reason) from the classifier's JSON reply."""
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return None
+    try:
+        parsed = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    tier = str(parsed.get("tier", "")).strip().lower()
+    return (tier, str(parsed.get("reason", "")).strip()) if tier in MODELS else None
+
+
+def classify(task: str, key: str, budget_status: str = "unknown") -> tuple[str, str] | None:
+    """Ask the classifier model for a tier. Tries x-api-key auth, then Bearer."""
+    body = json.dumps({
+        "model": CLASSIFIER_MODEL,
+        "max_tokens": 60,
+        "system": SYSTEM_PROMPT.format(budget_hint=BUDGET_HINTS.get(budget_status, "")),
+        "messages": [{"role": "user", "content": task[:4000]}],
+    }).encode()
+    for auth in ({"x-api-key": key}, {"authorization": f"Bearer {key}"}):
+        req = urllib.request.Request(
+            API_URL, data=body, method="POST",
+            headers={"content-type": "application/json", "anthropic-version": "2023-06-01", **auth},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.load(resp)
+        except urllib.error.HTTPError as exc:
+            log.debug("Classifier HTTP %s using %s", exc.code, next(iter(auth)))
+            if exc.code in (401, 403):
+                continue
+            return None
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            log.debug("Classifier failed: %s", exc)
+            return None
+        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+        result = parse_reply(text)
+        if result is None:
+            log.debug("Unparseable classifier reply: %r", text)
+        return result
+    return None
+
+
+def heuristic(task: str) -> tuple[str, str]:
+    """Offline fallback: keywords and length."""
+    if HEAVY.search(task):
+        return "o", "heavy-work keyword"
+    if len(task.split()) <= 25:
+        return "q", "short question"
+    return "s", "default"
+
+
+def route(task: str, forced: str | None = None, budget: Budget | None = None,
+          use_api: bool = True) -> Decision:
+    """Decide the tier for a task."""
+    if forced:
+        return Decision(forced, "forced", "forced")
+    key = load_api_key() if use_api else None
+    status = budget.status if budget else "unknown"
+    result = classify(task, key, status) if key else None
+    if result:
+        return Decision(result[0], result[1], "classifier")
+    tier, reason = heuristic(task)
+    return Decision(tier, reason, "heuristic")
+
+
+# ---------------------------------------------------------------- logging & stats
+def log_decision(task: str, decision: Decision, budget: Budget | None, path: Path = LOG_FILE) -> None:
+    """Append one routing decision to the JSONL log (best effort)."""
+    entry = {
+        "ts": dt.datetime.now().isoformat(timespec="seconds"),
+        **asdict(decision),
+        "model": decision.model,
+        "budget_status": budget.status if budget else "unknown",
+        "words": len(task.split()),
+    }
+    if os.environ.get("H_LOG_TASKS", "1") != "0":
+        entry["task"] = task[:80]
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a") as fh:
+            fh.write(json.dumps(entry) + "\n")
+    except OSError as exc:
+        log.debug("Could not write routing log: %s", exc)
+
+
+def stats(path: Path = LOG_FILE, days: int = 30) -> str:
+    """Summarise routing decisions from the last `days` days."""
+    if not path.exists():
+        return "No routing decisions logged yet."
+    cutoff = dt.datetime.now() - dt.timedelta(days=days)
+    tiers: dict[str, int] = {}
+    sources: dict[str, int] = {}
+    total = 0
+    for line in path.read_text().splitlines():
+        try:
+            e = json.loads(line)
+            if dt.datetime.fromisoformat(e["ts"]) < cutoff:
+                continue
+        except (json.JSONDecodeError, KeyError, ValueError):
+            continue
+        total += 1
+        tiers[e["tier"]] = tiers.get(e["tier"], 0) + 1
+        sources[e["source"]] = sources.get(e["source"], 0) + 1
+    if not total:
+        return f"No routing decisions in the last {days} days."
+    out = [f"Last {days} days: {total} sessions routed"]
+    for t in ("q", "s", "o"):
+        n = tiers.get(t, 0)
+        out.append(f"  {LABELS[t]:<7}{n:>4}  {'█' * round(20 * n / total)}")
+    out.append("  sources: " + ", ".join(f"{k} {v}" for k, v in sorted(sources.items())))
+    if sources.get("heuristic", 0) > 0.2 * total:
+        out.append("  ⚠ many heuristic fallbacks: classifier calls are failing (try H_DEBUG=1 h -n test)")
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------- eval
+def run_eval(task_file: Path, out=sys.stdout) -> None:
+    """Route each non-empty line of task_file (dry run) and write CSV for manual labelling."""
+    budget = read_budget()
+    writer = csv.writer(out)
+    writer.writerow(["task", "tier", "reason", "source", "expected"])
+    for line in task_file.read_text().splitlines():
+        task = line.strip()
+        if not task or task.startswith("#"):
+            continue
+        d = route(task, budget=budget)
+        writer.writerow([task, d.tier, d.reason, d.source, ""])
+
+
+def score(csv_file: Path) -> str:
+    """Compare routed tier against the hand-filled 'expected' column."""
+    rows = [r for r in csv.DictReader(csv_file.open()) if r.get("expected", "").strip()]
+    if not rows:
+        return "No labelled rows: fill the 'expected' column with q, s or o."
+    order = {"q": 0, "s": 1, "o": 2}
+    exact = sum(r["tier"] == r["expected"].strip() for r in rows)
+    under = sum(order[r["tier"]] < order[r["expected"].strip()] for r in rows)
+    over = len(rows) - exact - under
+    return (f"{len(rows)} labelled tasks: {exact} exact ({100 * exact / len(rows):.0f}%), "
+            f"{under} under-routed (quality risk), {over} over-routed (cost waste)")
+
+
+# ---------------------------------------------------------------- launch
+def copy_to_clipboard(text: str) -> bool:
+    """Copy text to the clipboard on macOS (pbcopy) or Linux (wl-copy / xclip)."""
+    for cmd in (["pbcopy"], ["wl-copy"], ["xclip", "-selection", "clipboard"]):
+        if shutil.which(cmd[0]):
+            try:
+                subprocess.run(cmd, input=text.encode(), check=True)
+                return True
+            except subprocess.CalledProcessError:
+                continue
+    return False
+
+
+def launch(task: str, decision: Decision) -> int:
+    """Replace this process with `hermes chat` on the chosen model."""
+    if shutil.which("hermes") is None:
+        print("h: 'hermes' not found on PATH", file=sys.stderr)
+        return 1
+    args = ["hermes", "chat", "--provider", "anthropic", "--model", decision.model]
+    flag = os.environ.get("H_FIRST_MESSAGE_FLAG", "").strip()
+    if flag:
+        args += [flag, task]
+    elif copy_to_clipboard(task):
+        print("  Task copied: paste it (⌘V / Ctrl+Shift+V) as your first message.")
+    else:
+        print(f"  First message: {task}")
+    sys.stdout.flush()
+    time.sleep(float(os.environ.get("H_PAUSE", "1.5")))
+    os.execvp(args[0], args)
+    return 0  # unreachable
+
+
+def main(argv: list[str]) -> int:
+    logging.basicConfig(level=logging.DEBUG if os.environ.get("H_DEBUG") else logging.WARNING,
+                        format="h: %(message)s")
+    if argv and argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+    if argv and argv[0] == "--version":
+        print(f"h {__version__}")
+        return 0
+    if argv and argv[0] == "--stats":
+        print(stats())
+        return 0
+    if argv and argv[0] == "--budget":
+        b = read_budget()
+        print(b.line() if b else "Budget unavailable (no readable ~/.hermes/state.db). H_DEBUG=1 for details.")
+        return 0
+    if argv and argv[0] in ("--eval", "--score"):
+        if len(argv) < 2:
+            print(f"h: {argv[0]} needs a file", file=sys.stderr)
+            return 2
+        if argv[0] == "--eval":
+            run_eval(Path(argv[1]))
+        else:
+            print(score(Path(argv[1])))
+        return 0
+
+    dry_run = bool(argv) and argv[0] == "-n"
+    if dry_run:
+        argv = argv[1:]
+    forced = argv.pop(0)[1] if argv and argv[0] in ("-q", "-s", "-o") else None
+
+    task = " ".join(argv).strip()
+    if not task:
+        try:
+            task = input("Task: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return 1
+    if not task:
+        print("h: no task given", file=sys.stderr)
+        return 1
+
+    budget = read_budget()
+    decision = route(task, forced, budget)
+    tag = "" if decision.source == "classifier" else f" [{decision.source}]"
+    print(f"→ {LABELS[decision.tier]} ({decision.model}): {decision.reason}{tag}")
+    if budget:
+        print(f"  {budget.line()}")
+    if dry_run:
+        return 0
+    log_decision(task, decision, budget)
+    return launch(task, decision)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
