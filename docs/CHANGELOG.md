@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 (evidence update), 21 Nov 2026
+- `h --sessions [N] [--csv] [--schema]`: per-session tokens, cache use, tool calls, Hermes' estimate, and an **independent recomputation from published prices**. Exact column whitelist, so prompts, IDs and JSON never print.
+- `docs/EVIDENCE.md`: every public number mapped to its proof.
+- **Corrections:** "direct Opus answer ≈ $0.02" → measured **$0.11**; "20 tool calls ≈ $0.38" → **12 tool calls, $0.36**; "$0.06" withdrawn. All three were the model guessing its own cost in the footer. The cost policy no longer prints unmeasured figures.
+- Real demo recording (asciinema) with `/usage` and the sessions table as on-screen proof.
+
 ## 0.3.0, 21 Nov 2026
 - **Any provider:** each tier is a `(provider, model)` pair in `~/.hermes/h.json`. Classifier adapters for the Anthropic Messages API and any OpenAI-compatible API (OpenAI, Gemini, xAI, OpenRouter, DeepSeek, local Ollama). Subscription sign-ins (ChatGPT, SuperGrok, Copilot) are supported launch-only.
 - **10 presets:** claude-credits (tested), claude-paygo, openai-api, gemini-api, gemini-free, xai, openrouter, local-ollama, mixed-budget, chatgpt-plan.
@@ -19,4 +25,4 @@
 
 ## 0.1.0, 21 Nov 2026
 - First working setup: Hermes on monthly API credits. Cost policy in SOUL.md. Basic `h` launcher (classify → launch).
-  *Impact:* $200/month credit went from unused to in use. A trivial question cost ~$0.02 instead of a ~$0.38 research loop.
+  *Impact:* $200/month credit went from unused to in use.

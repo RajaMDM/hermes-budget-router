@@ -5,23 +5,17 @@
 > Anyone can describe a cost-control framework. This one is a working tool, built while fixing a real setup. Try it.
 > By Raja Shahnawaz Soni · MIT licence · v0.3
 
-```text
-$ h what is survivorship in one sentence
-→ Haiku (anthropic/claude-haiku-5-5): Simple definition request; quick factual answer suffices.
-  cycle ~$0.90 of $200 (0%) · 19d left · pace ~$2
+![Demo: h checks the key, routes a quick question to Haiku and an architecture task to Opus, opens Hermes with the question already sent, then shows measured tokens and cost](docs/demo/demo.gif)
 
-$ h design the target-state architecture for multi-region customer MDM
-→ Opus (anthropic/claude-opus-5-5): Multi-region architecture with design trade-offs.
-```
-<sub>First decision and budget line are from a real run on Hermes v0.23.3. The second is illustrative.</sub>
+<sub>A real, unedited run on Hermes v0.23.3 (21 Nov 2026), recorded with asciinema. [MP4](docs/demo/demo.mp4) · [how to record your own](docs/demo/README.md) · [every number, sourced](docs/EVIDENCE.md)</sub>
 
 ---
 
 ## Why this exists
 
 1. **The model is fixed for the whole session, and switching mid-session is expensive.** Hermes can't change model in the middle of a reply. If you change it mid-conversation, the prompt cache is thrown away and you pay for the full context again. So the right moment to pick a model is **before** the session starts.
-2. **Tool loops cost more than model choice.** In our runs, two questions that set off 20 tool calls cost ~$0.38. A direct answer on the same model cost ~$0.02 (Hermes' estimates; see [evidence](docs/EVIDENCE.md)). Per token, Opus 5.5 is only 2× Sonnet 5.5 ([Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)).
-3. **Every new session has a setup cost.** Hermes sends ~22K tokens of setup (system prompt, tools, skills) before reading your question. On Haiku that costs ~$0.003, on Opus ~$0.11 ([evidence](docs/EVIDENCE.md) #14). Picking the model up front matters even for a one-line question.
+2. **For short questions, the model is most of the bill.** Every new Hermes session sends ~22K tokens of setup (system prompt, tools, skills) before it reads your question. In our measured sessions, a direct one-line answer cost **$0.11 on Opus 5.5 and $0.0028 on Haiku 5.5**, about 40× apart ([evidence](docs/EVIDENCE.md) #7–8, #14).
+3. **Tool loops multiply it.** Every tool call resends the context. An Opus session that made 10 API calls and 12 tool calls cost **$0.36**, ~3× a direct answer. Starting the next session within Anthropic's 5-minute cache window cut a repeat question from $0.0028 to **$0.0013** (#15).
 4. **People pay for capacity they never use.** Claude Max/Ultra plans include $100–$200 a month of API credit that most agent setups never reach ([guide](docs/guides/claude-api-credits.md)).
 
 ## Which setup are you?
@@ -106,6 +100,14 @@ Quote tasks containing `? * ! $ '`, e.g. `h "what's the cost?"`.
 - `reasoning` (optional, per tier): `none` … `ultra`, passed to `hermes chat --reasoning`. For example `low` on the quick tier and `high` on the strong one. Higher reasoning means more thinking tokens and more cost.
 
 Environment: `H_PAUSE` (seconds to show the decision, default 1.5), `H_FIRST_MESSAGE_FLAG` (default `-q`; set `clipboard` on Hermes builds older than v0.23 without `-q`), `H_LOG_TASKS=0`, `H_DEBUG=1`.
+
+### Proof, not promises
+
+`h --sessions` puts Hermes' own cost estimate next to an independent recomputation from the provider's published prices:
+
+![h --sessions output: three Haiku sessions, Hermes estimate and recomputed cost both $0.0069](docs/demo/03-sessions-proof.png)
+
+The second row is a fresh session ($0.0028: ~21.7K setup tokens written to cache). The first started three minutes later and reused 12,352 of those tokens from Anthropic's 5-minute cache, for $0.0013.
 
 ### Measure before you trust it
 

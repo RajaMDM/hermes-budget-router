@@ -19,7 +19,7 @@
 - Web UI npm install failed (likely Node version). CLI unaffected.
 - Changing model mid-session discards the prompt cache. Route per session, not per message.
 - SOUL.md is sent on every call. Keep the cost policy short.
-- A per-task sqlite lookup in the footer tripled the cost of a trivial question (~$0.02 → ~$0.06). Now it runs every 5th task.
+- ~~Footer sqlite lookup tripled cost (~$0.02 → ~$0.06)~~: both numbers were model guesses. Measured: Opus 0-tool answer $0.11, 1-tool $0.08. Session setup dominates, not the lookup.
 
 ## Launcher (`bin/h`)
 - Classifier: Haiku, JSON reply `{"tier","reason"}`. Heuristic fallback on any failure.

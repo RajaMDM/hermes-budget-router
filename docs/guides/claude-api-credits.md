@@ -184,6 +184,10 @@ hermes chat --provider anthropic
 Hi Raja, ready when you are.
 ```
 
+Inside Hermes, `/usage` confirms the route: token counts, and *"Anthropic account limits are only available for OAuth-backed Claude accounts"*, which means you're on the API key, not your subscription sign-in.
+
+![Hermes answering a routed question, then /usage showing tokens and the API-key confirmation](../demo/02-hermes-answer-and-usage.png)
+
 Then refresh **Console → Billing → Promotional credits**. The balance should drop slightly below $200.00. If it does, Hermes is spending the right pot.
 
 **Clean up:** delete the backups (they contain old tokens), and once you're confident, delete the commented `# ANTHROPIC_TOKEN=` line too.
@@ -212,15 +216,23 @@ API credits are charged at API prices, so how Hermes works matters more than whi
 
 ### What actually drives cost
 
-Numbers from our first sessions (Hermes' own estimates):
+Measured from Hermes' own session records (`h --sessions`, [CSV](../evidence/sessions-2026-11-21.csv)). Each cost was also recomputed independently from token counts × [Anthropic's published prices](https://platform.claude.com/docs/en/about-claude/pricing), and matched to four decimals:
 
-| Session | Model | Tool calls | Est. cost |
-|---|---|---|---|
-| 2 questions answered by "researching" (docs fetches, greps, DB query) | Opus 5.5 | 20 | ~$0.38 |
-| One-paragraph definition, answered directly | Opus 5.5 | 0 | ~$0.02 |
-| Same kind of question, plus a per-task cost lookup | Opus 5.5 | 1 | ~$0.06 |
+| Session (21 Nov 2026) | Model | API calls | Tool calls | Cost |
+|---|---|---|---|---|
+| Two questions the agent "researched" (doc fetches, greps, DB query) | Opus 5.5 | 10 | 12 | $0.36 |
+| One-line answer, no tools | Opus 5.5 | 3 | 0 | $0.11 |
+| One-line answer, no tools, fresh session | Haiku 5.5 | 1 | 0 | $0.0028 |
+| Same, started within 5 minutes of the previous one (warm cache) | Haiku 5.5 | 1 | 0 | $0.0013 |
 
-Every tool call resends the whole context, so **the number of tool calls usually drives cost more than the choice of model.** Per [Anthropic's pricing](https://platform.claude.com/docs/en/about-claude/pricing) (Nov 2026): Opus 5.5 is $4/$20 per million input/output tokens, Sonnet 5.5 $2/$10 (exactly half), and Haiku 5.5 $0.10/$0.50 for prompts up to 100K tokens (40× cheaper than Opus). Reproduce our session numbers with `h --sessions` ([evidence](../EVIDENCE.md)).
+What this shows:
+- **For short questions, the model dominates.** Every new session writes ~21–22K tokens of setup into the prompt cache before answering. That's ~$0.105 on Opus (×$5/M cache-write) and ~$0.0027 on Haiku (×$0.125/M). Choose the model before the session, not during it.
+- **Tool loops multiply it.** Every tool call resends the context. The research session cost ~3× a direct answer on the same model.
+- **Back-to-back sessions are cheaper.** Within Anthropic's 5-minute cache window, a new session reused 12,352 setup tokens at the cache-read price, cutting the cost by 54%.
+
+Prices per [Anthropic](https://platform.claude.com/docs/en/about-claude/pricing) (Nov 2026): Opus 5.5 $4/$20 per million input/output tokens, Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50 (prompts up to 100K tokens).
+
+> **Correction:** an earlier version of this guide said a direct Opus answer cost "~$0.02". That figure came from Hermes' footer, where the model guessed its own cost. The measured cost was $0.11. Footer figures aren't evidence (see [EVIDENCE.md](../EVIDENCE.md#known-non-evidence)).
 
 ### Move background tasks to Haiku
 
@@ -232,7 +244,7 @@ bash scripts/aux-to-cheap.sh anthropic claude-haiku-5-5   # backs up config.yaml
 
 ### Give Hermes a cost policy
 
-[`soul/cost-policy.md`](../../soul/cost-policy.md) is a short block for `~/.hermes/SOUL.md`. It caps tool calls on simple questions, makes Hermes offer (never apply) "spend more for a better result" options with a price, and adds a footer with the model and cost. With the policy in place, a definition question cost ~$0.02 and made no tool calls. The unconstrained session above cost ~$0.38.
+[`soul/cost-policy.md`](../../soul/cost-policy.md) is a short block for `~/.hermes/SOUL.md`. It caps tool calls on simple questions, makes Hermes offer (never apply) "spend more for a better result" options with a price, and ends each answer with the model used and why. It deliberately prints no dollar figure: cost comes from `h --sessions`, which reads Hermes' records.
 
 ## 6. `h`: the budget-aware launcher
 
