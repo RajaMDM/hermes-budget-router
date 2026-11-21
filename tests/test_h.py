@@ -87,6 +87,10 @@ class TestRubric(unittest.TestCase):
 
 
 class TestHeuristicAndParse(unittest.TestCase):
+    def test_heuristic_plans_go_standard(self):
+        self.assertEqual(h.heuristic("my team keeps missing deadlines. diagnose causes and give me a 30-day fix plan")[0], "s")
+        self.assertEqual(h.heuristic("draft an email to finance")[0], "s")
+
     def test_heuristic(self):
         self.assertEqual(h.heuristic("what is survivorship")[0], "q")
         self.assertEqual(h.heuristic("design the target-state architecture")[0], "o")

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.2, 21 Nov 2026
+- **Offline fallback errs towards adequate, not cheapest.** When the classifier call fails, plan, diagnose, strategy, draft, steps and similar requests now go to the standard tier, where before any request under 25 words went to the quick tier. Found when a classifier hiccup sent a "30-day fix plan" request to Haiku.
+
 ## 0.3.1, 21 Nov 2026
 - **Router rubric tuned:** plans and advice drawn from general knowledge now go to the **standard** tier. **Strong** is for real stakes, the user's specific context, architecture, hard debugging and novel problems. Evidence: the "team missing deadlines" question cost $0.1389 on Opus and $0.0682 on Sonnet with comparable usefulness ([EVIDENCE](EVIDENCE.md) #18).
 - **Cost policy:** the footer no longer suggests a cheaper tier. Opus suggested Sonnet and Sonnet suggested Haiku on the same question, so the signal is biased (#19).

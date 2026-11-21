@@ -45,7 +45,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 ENV_FILE = HERMES_HOME / ".env"
@@ -85,9 +85,14 @@ DEFAULT_CONFIG: dict = {
     },
 }
 
+STANDARD = re.compile(
+    r"\b(plan|diagnos\w*|strateg\w*|draft|write|email|steps|how (do|to|should)|improve|fix|"
+    r"explain why|compare|pros and cons|outline|summari[sz]e (this|the) (doc|report|file))\b",
+    re.IGNORECASE,
+)
 HEAVY = re.compile(
-    r"\b(architect\w*|design|strateg\w*|review|debug|refactor|deck|proposal|policy|"
-    r"governance|trade-?offs?|migrat\w*|compare|build)\b",
+    r"\b(architect\w*|design|review|debug|refactor|deck|proposal|policy|"
+    r"governance|trade-?offs?|migrat\w*|build)\b",
     re.IGNORECASE,
 )
 
@@ -534,6 +539,8 @@ def heuristic(task: str) -> tuple[str, str]:
     """Offline fallback: keywords and length."""
     if HEAVY.search(task):
         return "o", "heavy-work keyword"
+    if STANDARD.search(task):
+        return "s", "task-type keyword"
     if len(task.split()) <= 25:
         return "q", "short question"
     return "s", "default"
