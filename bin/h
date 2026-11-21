@@ -45,7 +45,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 ENV_FILE = HERMES_HOME / ".env"
@@ -93,8 +93,8 @@ HEAVY = re.compile(
 
 SYSTEM_PROMPT = """You route tasks to the cheapest AI model tier that will do them well.
 q = quick: definitions, quick facts, lookups, short summaries, simple rewrites, formatting.
-s = standard: routine coding and edits, drafts, emails, multi-step but well-defined work.
-o = strong: architecture and design trade-offs, hard debugging, long builds, stakeholder or public documents, ambiguous problems.
+s = standard: routine coding and edits, drafts, emails, multi-step but well-defined work, and plans or advice drawn from general knowledge (how-tos, frameworks, generic improvement plans).
+o = strong: decisions with real stakes or that hinge on the user's specific situation, architecture and design trade-offs, hard debugging, long builds, documents going to stakeholders or the public, genuinely novel or ambiguous problems.
 When unsure between two tiers, pick the cheaper one.{budget_hint}
 Reply with JSON only: {{"tier":"q|s|o","reason":"<max 12 words>"}}"""
 

@@ -27,6 +27,8 @@ Three levels of proof:
 | 15 | A session started within 5 minutes of the previous one cost 54% less ($0.0013 vs $0.0028) | README, guide, post | CSV row 15:04: 12,352 cache-read + 9,282 cache-write tokens, against 21,693 cache-write tokens cold | ✓ |
 | 16 | Same agent: simple question → Haiku **$0.0027**; complex question → Opus **$0.1389** (~51×) | README, video, post | `docs/demo/video.cast` (the full recording) and its on-screen `h --sessions 2`; recomputation matches: Opus 21,660 cache-write × $5/M + 1,531 output × $20/M = $0.1389 | ✓ |
 | 17 | Opus itself said Sonnet would have been enough ("next time: h -s") | Video, post | Footer line in `docs/demo/video.cast`, shown in the video at the moment it's narrated | ✓ |
+| 18 | The deadlines question on Sonnet cost **$0.0682** (49% of Opus's $0.1389) and was about as useful | Post, README | `h --sessions 2` row fe6104c185 (Sonnet, 1,122 output tokens, 22,780 cache-write tokens; recomputed = estimate). Quality: side-by-side review of both answers. Sonnet's tests and plan were more measurable; Opus was more realistic on timing (4–6 weeks, not 30 days) and on escalating scope/staffing problems; Sonnet contradicted itself once ("no process changes yet", then reorganised into pods) | ✓ cost; quality = one reviewer's judgement |
+| 19 | The models' "next time: cheaper tier" footer is a biased signal | Cost policy, TECH_MEMORY | Opus said "h -s"; Sonnet, on the same question, said "h -q". Each recommended the tier below itself. The policy no longer asks for it | ✓ |
 
 ## How to capture the pending items
 

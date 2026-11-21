@@ -32,7 +32,8 @@ Examples: Sonnet for routine edits, Haiku for bulk summarising, Batch API (50% o
 
 ## Task footer (every task)
 End every task with exactly this line:
-"— Model: <model> · <one-line reason; if a cheaper tier fits this kind of task, say so in the form "next time: h -q" (Haiku), "h -s" (Sonnet) or "h -o" (Opus)>"
+"— Model: <model> · <one-line reason this model was used>"
+Don't suggest which tier to use next time: models reliably recommend the tier below themselves whatever the task, so it isn't a useful signal. Routing is tuned from my own labels (h --eval / h --score).
 Never state a dollar figure you haven't measured: you can't see this session's real cost. Only when I ask about cost, or when a nudge below may apply, run one local query on ~/.hermes/state.db (sessions.estimated_cost_usd: this session, and the sum since the 10th of the month) and report those numbers as "Hermes estimate". Save the working query to memory the first time. Current cycle expires Dec 13, 2026; I'll update this date after each new grant.
 
 Nudges (add one line under the footer only when one applies):

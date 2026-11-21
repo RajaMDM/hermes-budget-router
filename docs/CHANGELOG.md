@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1, 21 Nov 2026
+- **Router rubric tuned:** plans and advice drawn from general knowledge now go to the **standard** tier. **Strong** is for real stakes, the user's specific context, architecture, hard debugging and novel problems. Evidence: the "team missing deadlines" question cost $0.1389 on Opus and $0.0682 on Sonnet with comparable usefulness ([EVIDENCE](EVIDENCE.md) #18).
+- **Cost policy:** the footer no longer suggests a cheaper tier. Opus suggested Sonnet and Sonnet suggested Haiku on the same question, so the signal is biased (#19).
+
 ## 0.3.0 (launch assets), 21 Nov 2026
 - **Narrated demo video** (1:42): simple vs complex question, real recording, Kokoro voice "Isabella", captions burned in plus a toggleable track and `.srt`, © trykarkedekho.com watermark. Reproducible pipeline in `docs/demo/video/`.
 - **About Hermes Agent** section with attribution to Nous Research. Credits for Kokoro, HyperFrames, asciinema. `NOTICE` keeps the videos all-rights-reserved while the code stays MIT.

@@ -165,6 +165,8 @@ h --score routes.csv
 
 ## Limits, stated plainly
 
+- **The router can over-spend, and we measured it once.** The demo's "team missing deadlines" question went to Opus ($0.14). Re-run on Sonnet, it cost $0.07 and was about as useful, so v0.3.1 sends general-knowledge plans to the standard tier ([evidence](docs/EVIDENCE.md) #18). Label your own tasks with `h --eval` to tune it further.
+
 - **Cheaper models are more literal.** In testing, "what is survivorship" sent to the quick tier came back as *survivorship bias* (statistics). The strong model had inferred the MDM meaning. Name the domain in quick questions: `h what is MDM survivorship`.
 
 - **Cost figures are Hermes' estimates** from its own price table, not your provider's bill. Check them against your provider's console. [`docs/EVIDENCE.md`](docs/EVIDENCE.md) maps every number in this repo to its proof.

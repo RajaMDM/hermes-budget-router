@@ -76,6 +76,16 @@ class TestKeys(unittest.TestCase):
         self.assertEqual(h.get_key(h.ENDPOINTS["custom"], {}), "")
 
 
+class TestRubric(unittest.TestCase):
+    def test_general_knowledge_plans_go_to_standard(self):
+        sp = h.SYSTEM_PROMPT
+        s_line = next(l for l in sp.splitlines() if l.startswith("s = "))
+        o_line = next(l for l in sp.splitlines() if l.startswith("o = "))
+        self.assertIn("plans or advice drawn from general knowledge", s_line)
+        self.assertIn("real stakes", o_line)
+        self.assertIn("{budget_hint}", sp)
+
+
 class TestHeuristicAndParse(unittest.TestCase):
     def test_heuristic(self):
         self.assertEqual(h.heuristic("what is survivorship")[0], "q")

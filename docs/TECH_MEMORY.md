@@ -52,3 +52,8 @@
 - Finding: each new session writes ~21.7K tokens to the cache before the first answer. On Haiku 5.5, 21,693 × $0.125/M + 4 × $0.10/M + 131 × $0.50/M = $0.0028, matching Hermes' estimate exactly.
 - The SOUL footer's "task ~$X.XX" was the model guessing. On camera it said ~$0.01 when state.db (and the recomputation) said $0.0028. The model can't see its own cost without a tool call. Footer v3 drops unmeasured dollar figures. Cost comes from `h --sessions` or an on-request state.db query.
 - Hermes `/usage` shows tokens but not cost for API-key sessions, and reports "Anthropic account limits are only available for OAuth-backed Claude accounts". That confirms the session uses the API key, not OAuth.
+
+## Routing calibration (21 Nov 2026)
+- Same question ("12-person team missing deadlines, 30-day plan"): Opus $0.1389, Sonnet $0.0682. Sonnet was ~90% as useful. Opus's edge was judgement (realistic 4–6-week horizon, escalate when the problem is scope/staffing). Rubric v2 moves general-knowledge plans to standard.
+- Model self-assessment is biased downward: Opus → "h -s", Sonnet → "h -q" on the same task. Never tune routing from footers. Use `h --eval` labels.
+- The video still shows the v1 rubric picking Opus for that question. That's accurate for when it was recorded, and the narration says Opus judged a cheaper model enough, which the Sonnet test confirmed.
