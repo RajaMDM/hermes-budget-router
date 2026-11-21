@@ -134,7 +134,7 @@ h --score routes.csv
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests     # 32 tests, no network needed
+python3 -m unittest discover -s tests     # 33 tests, no network needed
 ```
 
 ---

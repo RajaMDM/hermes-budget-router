@@ -597,8 +597,13 @@ def init(preset: str | None) -> int:
         shutil.copy2(CONFIG_FILE, backup)
         print(f"Backed up existing config to {backup}")
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(presets[preset], CONFIG_FILE)
-    print(f"Wrote {CONFIG_FILE} from preset '{preset}'. Next: edit any REPLACE_ placeholders, then run h --check")
+    raw = json.loads(presets[preset].read_text())
+    raw["name"] = preset
+    CONFIG_FILE.write_text(json.dumps(raw, indent=2) + "\n")
+    todo = [k for k, t in raw["tiers"].items() if "REPLACE" in str(t.get("model", "")).upper()]
+    nxt = (f"edit the placeholder model for tier(s) {', '.join(todo)} in {CONFIG_FILE}, then run h --check"
+           if todo else "run h --check")
+    print(f"Wrote {CONFIG_FILE} from preset '{preset}'. Next: {nxt}")
     return 0
 
 

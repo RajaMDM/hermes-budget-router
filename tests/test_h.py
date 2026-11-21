@@ -221,6 +221,19 @@ class TestLaunchArgs(unittest.TestCase):
             h.parse_config(raw)
 
 
+class TestInit(unittest.TestCase):
+    def test_init_names_config_and_flags_placeholders(self):
+        target = tmpdir() / "h.json"
+        buf = io.StringIO()
+        with mock.patch.object(h, "CONFIG_FILE", target), mock.patch("sys.stdout", buf):
+            h.init("claude-credits")
+            self.assertEqual(json.loads(target.read_text())["name"], "claude-credits")
+            self.assertIn("Next: run h --check", buf.getvalue())
+            h.init("openrouter")
+        self.assertIn("placeholder model for tier(s) q, s, o", buf.getvalue())
+        self.assertTrue(target.with_suffix(".json.bak").exists())
+
+
 class TestLogStatsEval(unittest.TestCase):
     def test_log_stats(self):
         p = tmpdir() / "log.jsonl"
