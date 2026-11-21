@@ -220,7 +220,7 @@ Numbers from our first sessions (Hermes' own estimates):
 | One-paragraph definition, answered directly | Opus 5.5 | 0 | ~$0.02 |
 | Same kind of question, plus a per-task cost lookup | Opus 5.5 | 1 | ~$0.06 |
 
-Every tool call resends the whole context, so **the number of tool calls usually drives cost more than the choice of model.** Opus 5.5 is exactly 2× Sonnet 5.5 per token. Haiku 5.5 is about 40× cheaper than Opus for prompts under 100K tokens.
+Every tool call resends the whole context, so **the number of tool calls usually drives cost more than the choice of model.** Per [Anthropic's pricing](https://platform.claude.com/docs/en/about-claude/pricing) (Nov 2026): Opus 5.5 is $4/$20 per million input/output tokens, Sonnet 5.5 $2/$10 (exactly half), and Haiku 5.5 $0.10/$0.50 for prompts up to 100K tokens (40× cheaper than Opus). Reproduce our session numbers with `h --sessions` ([evidence](../EVIDENCE.md)).
 
 ### Move background tasks to Haiku
 

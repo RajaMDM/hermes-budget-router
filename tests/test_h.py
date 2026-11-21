@@ -221,6 +221,39 @@ class TestLaunchArgs(unittest.TestCase):
             h.parse_config(raw)
 
 
+class TestSessions(unittest.TestCase):
+    def _db(self):
+        db = tmpdir() / "state.db"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE sessions (id TEXT, title TEXT, model TEXT, started_at REAL, "
+                    "message_count INT, tool_call_count INT, input_tokens INT, output_tokens INT, "
+                    "estimated_cost_usd REAL, secret_blob TEXT)")
+        con.executemany("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)", [
+            ("a", "private topic", "claude-opus-5-5", dt.datetime(2026, 11, 21, 12, 5).timestamp(), 24, 20, 90000, 3000, 0.38, "x"),
+            ("b", "survivorship", "claude-haiku-5-5", dt.datetime(2026, 11, 21, 13, 9).timestamp(), 2, 0, 9000, 60, 0.001, "y")])
+        con.commit()
+        con.close()
+        return db
+
+    def test_detects_columns_hides_titles_and_unknowns(self):
+        cols, rows = h.read_sessions(self._db(), limit=5)
+        self.assertNotIn("title", cols)
+        self.assertNotIn("secret_blob", cols)
+        self.assertIn("tool_call_count", cols)
+        self.assertEqual(rows[0][0], "b")  # newest first
+
+    def test_titles_opt_in_and_csv(self):
+        cols, rows = h.read_sessions(self._db(), limit=5, titles=True)
+        out = h.format_sessions(cols, rows, as_csv=True)
+        self.assertIn("private topic", out)
+        self.assertIn("0.3800", out)
+        self.assertIn("2026-11-21 12:05", out)
+
+    def test_text_table_total(self):
+        cols, rows = h.read_sessions(self._db(), limit=5)
+        self.assertIn("$0.3810", h.format_sessions(cols, rows))
+
+
 class TestInit(unittest.TestCase):
     def test_init_names_config_and_flags_placeholders(self):
         target = tmpdir() / "h.json"

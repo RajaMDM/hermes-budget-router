@@ -20,7 +20,7 @@ $ h design the target-state architecture for multi-region customer MDM
 ## Why this exists
 
 1. **The model is fixed for the whole session, and switching mid-session is expensive.** Hermes can't change model in the middle of a reply. If you change it mid-conversation, the prompt cache is thrown away and you pay for the full context again. So the right moment to pick a model is **before** the session starts.
-2. **Tool loops cost more than model choice.** In our measurements, two questions that set off 20 tool calls cost ~$0.38. A direct answer on the same expensive model cost ~$0.02. The top-tier model is only 2× the mid-tier one per token.
+2. **Tool loops cost more than model choice.** In our runs, two questions that set off 20 tool calls cost ~$0.38. A direct answer on the same model cost ~$0.02 (Hermes' estimates; see [evidence](docs/EVIDENCE.md)). Per token, Opus 5.5 is only 2× Sonnet 5.5 ([Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)).
 3. **People pay for capacity they never use.** Claude Max/Ultra plans include $100–$200 a month of API credit that most agent setups never reach ([guide](docs/guides/claude-api-credits.md)).
 
 ## Which setup are you?
@@ -76,6 +76,7 @@ Needs Python 3.9+ and Hermes on your PATH. API keys are read from your environme
 | `h --check` | Verify each tier: key present, model offered by the provider |
 | `h --budget` | Cycle spend, days left, projected spend |
 | `h --stats` | Routing mix and models used, last 30 days |
+| `h --sessions [N] [--csv]` | Last N Hermes sessions: tokens, tool calls, estimated cost (titles hidden unless `--titles`) |
 | `h --eval tasks.txt > routes.csv` · `h --score routes.csv` | Measure routing accuracy against your own labels |
 
 Quote tasks containing `? * ! $ '`, e.g. `h "what's the cost?"`.
@@ -128,7 +129,7 @@ h --score routes.csv
 
 - **Cheaper models are more literal.** In testing, "what is survivorship" sent to the quick tier came back as *survivorship bias* (statistics). The strong model had inferred the MDM meaning. Name the domain in quick questions: `h what is MDM survivorship`.
 
-- **Cost figures are Hermes' estimates** from its own price table, not your provider's bill. Check them against your provider's console.
+- **Cost figures are Hermes' estimates** from its own price table, not your provider's bill. Check them against your provider's console. [`docs/EVIDENCE.md`](docs/EVIDENCE.md) maps every number in this repo to its proof.
 - **Needs Hermes v0.23+ for one-step launch.** Older builds lack `-q`. Use `H_FIRST_MESSAGE_FLAG=clipboard` and paste instead.
 - **Routing accuracy hasn't been measured on a large task set yet.** Use `--eval` / `--score` and share your numbers.
 - **Provider line-ups change monthly.** Run `h --check` after any provider announcement.
@@ -136,7 +137,7 @@ h --score routes.csv
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests     # 33 tests, no network needed
+python3 -m unittest discover -s tests     # 36 tests, no network needed
 ```
 
 ---

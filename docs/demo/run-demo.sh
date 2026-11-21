@@ -7,7 +7,8 @@
 #   asciinema rec docs/demo/demo.cast --overwrite -c "bash docs/demo/run-demo.sh"
 #   agg docs/demo/demo.cast docs/demo/demo.gif
 #
-# When Hermes has answered in step 4, type /exit and press Enter. The script then continues.
+# When Hermes has answered in step 4, type /usage (Hermes' own token + cost breakdown for the
+# session), then /exit. The script then continues and shows the session in Hermes' database.
 set -u
 export PATH="$HOME/bin:$PATH" H_PAUSE=2
 mkdir -p /tmp/hermes-demo && cd /tmp/hermes-demo || exit 1
@@ -34,9 +35,12 @@ note "3. This credit cycle's budget"
 type_cmd h --budget; pause 3
 
 clear
-note "4. The real thing: route, then Hermes opens with the question already sent"
+note "4. The real thing: route, then Hermes opens with the question already sent (then /usage, /exit)"
 type_cmd h what is MDM survivorship in one sentence
 
 clear
-note "5. Routing history"
+note "5. Proof: tokens, tool calls and estimated cost of the sessions just run (from Hermes' own database)"
+type_cmd h --sessions 3; pause 5
+
+note "6. Routing history"
 type_cmd h --stats; pause 4

@@ -15,6 +15,9 @@ Usage:
   h --presets           list bundled presets
   h --check             verify keys and that each tier's model exists at its provider
   h --budget            this cycle's estimated spend and pace
+  h --sessions [N] [--csv] [--titles]
+                        last N Hermes sessions with tokens, tool calls and estimated cost
+                        (from Hermes' state.db; titles hidden unless --titles)
   h --stats             summarise past routing decisions
   h --eval FILE         route each line of FILE (dry run), print CSV for labelling
   h --score FILE.csv    accuracy of a labelled eval CSV
@@ -380,6 +383,76 @@ def read_budget(cfg: Config, db: Path = STATE_DB, today: dt.date | None = None) 
     return Budget(spent, cfg.budget_usd, start, end, today)
 
 
+# ================================================================ session evidence
+SESSION_COLUMN_HINTS = ("id", "title", "model", "provider", "source", "start", "created", "ended",
+                        "message", "tool", "token", "cache", "cost", "duration")
+
+
+def read_sessions(db: Path = STATE_DB, limit: int = 10, titles: bool = False) -> tuple[list[str], list[tuple]]:
+    """Return (columns, rows) for the most recent sessions. Columns are auto-detected from the schema
+    because Hermes' state.db layout isn't documented. Titles are dropped unless asked for (privacy)."""
+    if not db.exists():
+        raise SystemExit(f"h: no Hermes database at {db}")
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+    try:
+        cols = [r[1] for r in con.execute("PRAGMA table_info(sessions)")]
+        if not cols:
+            raise SystemExit("h: state.db has no sessions table")
+        keep = [c for c in cols if any(h in c.lower() for h in SESSION_COLUMN_HINTS)]
+        if not titles:
+            keep = [c for c in keep if "title" not in c.lower()]
+        order = next((c for c in ("started_at", "created_at", "start_time", "updated_at", "timestamp")
+                      if c in cols), "rowid")
+        quoted = ", ".join(f'"{c}"' for c in keep)
+        rows = con.execute(f"SELECT {quoted} FROM sessions ORDER BY {order} DESC LIMIT ?", (limit,)).fetchall()
+    finally:
+        con.close()
+    return keep, rows
+
+
+def format_sessions(cols: list[str], rows: list[tuple], as_csv: bool = False) -> str:
+    """Render sessions as CSV or an aligned text table, with readable timestamps."""
+    def cell(c: str, v: object) -> str:
+        if v is None:
+            return ""
+        if any(k in c.lower() for k in ("start", "created", "ended", "updated", "timestamp")):
+            d = _to_datetime(v)
+            if d:
+                return d.strftime("%Y-%m-%d %H:%M")
+        if "cost" in c.lower():
+            try:
+                return f"{float(v):.4f}"
+            except (TypeError, ValueError):
+                pass
+        return str(v)
+
+    table = [[cell(c, v) for c, v in zip(cols, r)] for r in rows]
+    if as_csv:
+        buf = __import__("io").StringIO()
+        w = csv.writer(buf)
+        w.writerow(cols)
+        w.writerows(table)
+        return buf.getvalue().rstrip("\n")
+    widths = [max([len(c)] + [len(r[i]) for r in table]) for i, c in enumerate(cols)]
+    line = lambda vals: "  ".join(v.ljust(widths[i]) for i, v in enumerate(vals))
+    out = [line(cols), line(["-" * w for w in widths])] + [line(r) for r in table]
+    total = sum(float(r[i] or 0) for r in table for i, c in enumerate(cols) if "cost" in c.lower() and r[i])
+    out.append(f"Estimated cost of these {len(rows)} sessions: ${total:.4f} (Hermes' estimate; your provider's bill is the source of truth)")
+    return "\n".join(out)
+
+
+def _to_datetime(value: object) -> dt.datetime | None:
+    try:
+        num = float(value)  # type: ignore[arg-type]
+        return dt.datetime.fromtimestamp(num / 1000 if num > 1e12 else num)
+    except (TypeError, ValueError, OverflowError, OSError):
+        pass
+    try:
+        return dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 # ================================================================ routing
 @dataclass
 class Decision:
@@ -626,6 +699,12 @@ def main(argv: list[str]) -> int:
         return init(argv[1] if len(argv) > 1 else None)
     if cmd == "--stats":
         print(stats())
+        return 0
+    if cmd == "--sessions":
+        rest = argv[1:]
+        n = next((int(a) for a in rest if a.isdigit()), 10)
+        cols, rows = read_sessions(limit=n, titles="--titles" in rest)
+        print(format_sessions(cols, rows, as_csv="--csv" in rest))
         return 0
 
     cfg = load_config()
