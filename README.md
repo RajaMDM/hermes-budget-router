@@ -9,7 +9,7 @@
 
 <sub>A real, unedited run on Hermes v0.23.3 (21 Nov 2026), recorded with asciinema. [MP4](docs/demo/demo.mp4) · [how to record your own](docs/demo/README.md) · [every number, sourced](docs/EVIDENCE.md)</sub>
 
-**🎬 Narrated walkthrough (1:42):** [watch with captions](docs/demo/hermes-budget-router-demo.mp4) · [toggleable-captions version](docs/demo/hermes-budget-router-demo-cc.mp4) · [captions file (.srt)](docs/demo/hermes-budget-router-demo.en.srt). A simple question routed to Haiku ($0.0027) and a complex one routed to Opus ($0.1389), from the same agent, with the measured cost of each.
+**🎬 Narrated walkthrough (1:40):** [watch with captions](docs/demo/hermes-budget-router-demo.mp4) · [toggleable-captions version](docs/demo/hermes-budget-router-demo-cc.mp4) · [captions file (.srt)](docs/demo/hermes-budget-router-demo.en.srt). A simple question routed to Haiku ($0.0027) and a complex one routed to Opus ($0.1389), from the same agent, with the measured cost of each.
 
 [![Comparison: simple question on Haiku cost $0.0027, complex question on Opus cost $0.1389](docs/demo/04-comparison-card.png)](docs/demo/hermes-budget-router-demo.mp4)
 

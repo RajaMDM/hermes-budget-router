@@ -2,7 +2,7 @@ title|Most AI agents answer every question with the same expensive model. Here's
 s1|First, a quick health check. The API key works, and all three Claude models are available.
 s2|A simple question: what is compound interest? The router sends it to Haiku, the cheapest model. Hermes opens with the question already asked, and answers in about two seconds.
 s3|Now a harder one: a team that keeps missing deadlines, and a thirty-day plan to fix it. This needs judgement, so the router picks Opus, the strongest model. It takes longer, and gives a real plan.
-s3b|Notice the footer: Opus itself says Sonnet would have been enough. The agent is honest about cost.
+s3b|Notice the footer: Opus itself says a cheaper model would have been enough. The agent is honest about cost.
 s4|Here's what each answer actually cost, from the records Hermes keeps. Both figures are recomputed independently from Anthropic's published prices, and they match.
 compare|The simple answer cost about a quarter of a cent. The complex one, about fourteen cents. Fifty times more, and only when the question deserves it.
-end|This budget router for Hermes is free and open source on GitHub. Made by Raja Shahnawaz Soni. Try karke dekho dot com.
+end|This budget router for Hermes is free and open source on GitHub. Try karke dekho dot com.
